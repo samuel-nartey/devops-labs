@@ -434,7 +434,7 @@ jobs:
 
       # Step 6: Pull the uploaded image and run a smoke test to verify it works.
       - name: Pull image and run smoke tests
-        if: success()
+        if: success(
         run: |
           echo "Pulling image..."
           docker pull ${{ env.DOCKER_HUB_USER }}/${{ env.IMAGE_NAME }}:v1.0.0-${{ env.TAG_SUFFIX }}
@@ -444,7 +444,7 @@ jobs:
             ${{ env.DOCKER_HUB_USER }}/${{ env.IMAGE_NAME }}:v1.0.0-${{ env.TAG_SUFFIX }}
 
           # Give Flask a few seconds to start.
-          sleep 5
+          sleep 
 
           # Test the /health endpoint. curl -f fails on HTTP errors.
           echo "Testing /health endpoint..."
@@ -454,7 +454,7 @@ jobs:
           echo "Testing / endpoint..."
           curl -s http://localhost:5000/ | grep -i "hello" || (echo "Home page missing greeting!" && exit 1)
 
-          echo "All smoke tests passed."
+          echAl smoke tests passed"
 
       # Step 7: Clean up the test container, whether earlier steps passed or failed.
       # if: always() ensures it runs even if the smoke tests fail.
@@ -509,8 +509,7 @@ How could you further secure the supply chain of this image?
 <details> <summary>Answer</summary> Sign the image with Cosign, pin base image digests instead of tags, generate a Software Bill of Materials (SBOM), and verify signatures at deployment time. These practices provide integrity guarantees and are increasingly required in regulated industries. </details>
  Contributing / License
 This project is intended for learning. Feel free to fork, extend, and share.
-Licensed under MIT – see LICENSE for details.
-
+Licensed under MIT – see LICENSE for details
 https://img.shields.io/badge/Lab%2520completed:-Manual%2520build%E2%86%92Push%E2%86%92Pull%E2%86%92Automation-blue?style=flat-square
 
 Happy DevSecOps learning!
