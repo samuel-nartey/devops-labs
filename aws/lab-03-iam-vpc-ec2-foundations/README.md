@@ -1,5 +1,5 @@
 # AWS Hands-On Lab Guide
-### Team Presentation -- Sunday, May 25, 2026
+### Team Presentation -- Sunday, May 24, 2026
 
 ---
 
