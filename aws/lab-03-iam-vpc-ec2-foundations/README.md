@@ -279,10 +279,13 @@ Now we escalate the experiment. We will add an explicit Deny to the group. Previ
 3. What is the AWS rule that governs this behavior? Write it in one sentence.
 4. Can you think of a real-world scenario where you would want an explicit deny rather than simply not granting a permission?
 
-**The technical explanation you should arrive at:**
+<details>
+<summary>Click to reveal the explanation</summary>
+  **The technical explanation you should arrive at:**
 
 AWS policy evaluation follows a strict hierarchy. An explicit Deny at any level overrides any number of Allows from any other source. This is intentional. AWS assumes that if an administrator explicitly wrote "Deny", they meant it as an absolute. A user's personal policy cannot argue with a group deny. This is the core of effective permissions: the effective result is the combination of all policies evaluated together, and a single explicit Deny in any of them removes that permission entirely.
 
+</details>
 ---
 
 ### Step 6: Create a Permission Boundary for bob-ops
@@ -375,10 +378,13 @@ Sign in as bob-ops in an incognito window. Try the following actions and record 
 2. How does a permission boundary differ from a group deny? Both are blocking Bob from certain actions. Are they the same mechanism?
 3. Write the formula for how effective permissions work when a boundary is present. Use plain language, not just the math notation.
 4. If you removed the boundary tomorrow but left the bob-admin-attempt policy, what would bob-ops be able to do?
-
+<details>
+  <summary>Click to reaveal explanation</summary>
 **The technical explanation:**
 
 A permission boundary defines the maximum possible permissions. It does not grant permissions on its own. It acts as a filter on top of whatever identity policies exist. The effective permission is the intersection: only actions that are permitted by both the identity policy and the boundary are actually granted. If the boundary allows S3 read and the identity policy allows everything, the intersection is S3 read only. The group membership does not expand the boundary. Adding more identity policies does not expand the boundary either. The boundary is a ceiling, not a wall.
+
+</details>
 
 ---
 
@@ -581,9 +587,13 @@ Before attaching the second SCP, discuss these questions with your group:
 3. Are there any AWS services that are global and not region-specific? Would this SCP block those too? How might you handle that?
 4. If the TeamAlpha account's IAM admin creates a new IAM user and gives that user AdministratorAccess, can that user launch EC2 instances in Ireland?
 
+<details>
+  <summary>Click to reveal explanation</summary>
 **The technical explanation:**
 
 The aws:RequestedRegion condition key is evaluated by AWS at the time of the API call. When you click "Launch Instance" in the console, the console sends an API call to the EC2 service endpoint for that region. The SCP intercepts this at the Organizations level before IAM even evaluates it. Because the effect is Deny and the condition is StringNotEquals, the logic reads: "If the region being requested is anything other than us-east-1, deny the action." There is no IAM policy that can override this because SCPs are evaluated before IAM policies in the AWS authorization chain.
+
+</details>
 
 ---
 
@@ -809,8 +819,13 @@ You are about to freeze this instance's current state into a reusable blueprint.
 7. Go to "AMIs" in the left sidebar
 8. Wait until the AMI status changes from pending to available. This usually takes 3 to 5 minutes.
 
-**What is happening during this wait?** AWS is stopping the instance temporarily (or taking a snapshot while running, depending on settings), creating a snapshot of the root EBS volume, and registering that snapshot as an AMI with all the metadata needed to launch new instances from it. The original instance continues running.
+**What is happening during this wait?** 
 
+<details>
+  <summary>Click to reveal the explanation</summary>
+AWS is stopping the instance temporarily (or taking a snapshot while running, depending on settings), creating a snapshot of the root EBS volume, and registering that snapshot as an AMI with all the metadata needed to launch new instances from it. The original instance continues running.
+
+</details>
 ---
 
 ### Step 4: Launch Two Instances from the AMI
@@ -851,15 +866,22 @@ Form your answer. Then access their public IPs directly and check.
 1. What instance ID does each server display? Is it the same as the bootstrap-webserver or their own?
 2. The HTML file was written by the bootstrap script with the original instance's ID embedded in it. But the new instances show their own IDs. How is this possible? What part of the process handled this?
 
+
+<details>
+  <summary>Click to reveal explanation</summary>
 **The technical explanation:**
 
 Look at the bootstrap script again. The HTML file is generated dynamically using the INSTANCE_ID variable, which is fetched from the metadata service at the time the script runs. When you create an AMI, the HTML file that exists on disk at that moment contains the bootstrap instance's ID. When webserver-1 and webserver-2 launch from that AMI, the HTML file they inherit still has the old ID.
+</details>
 
 Wait -- but the page shows the new instance IDs. That means the script ran again. Why?
 
+<details>
+  <summary>Click to reveal explanation</summary>
 Actually, by default User Data does not run again after the first boot. If your page is showing the new instance IDs, it is because systemd and httpd are serving the same static file, and the instance ID in it is from the bootstrap instance. If you want each new instance to display its own ID, you need to either put the User Data script back in when launching from the AMI, or modify the HTML on each instance after launch.
 
 This is an important discovery. Test it. Navigate to the IP addresses of webserver-1 and webserver-2 and check what ID appears. Then SSH in and run:
+</details>
 
 ```bash
 cat /var/www/html/index.html | grep INSTANCE
