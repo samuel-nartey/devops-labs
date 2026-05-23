@@ -9,7 +9,7 @@ Markdown
 ![Docker Pulls](https://img.shields.io/docker/pulls/<your-dockerhub-username>/my-web-app?style=flat-square)
 ![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)
 
-> A complete, copy‑paste‑ready walkthrough for learning Docker, Docker Hub, and DevSecOps automation with GitHub Actions. 
+> A complete,walkthrough for learning Docker, Docker Hub, and DevSecOps automation with GitHub Actions. 
 > **Read everything!** Each command, flag, and line of code is explained – you will understand *why*, not just *how*.
 
 ---
@@ -29,7 +29,7 @@ Everything is designed for **entry‑level DevSecOps** learners. You will work e
 
 ---
 
-## 📑 Table of Contents
+##  Table of Contents
 
 1. [Prerequisites & Toolbox](#-prerequisites--toolbox)
 2. [Generating a Docker Hub Access Token](#-generating-a-docker-hub-access-token)
@@ -69,6 +69,19 @@ The only missing piece is your **Docker Hub personal access token**. You’ll ge
 
 ---
 
+### project structure
+```
+your-project/
+├── app.py                          # Flask application (home page + health endpoint)
+├── templates/
+│   └── index.html                  # Jinja2 HTML template for the home page
+├── requirements.txt                # Python dependencies
+├── Dockerfile                      # Instructions to build the container image
+├── .dockerignore                   # Files to exclude from the image
+└── .github/
+    └── workflows/
+        └── docker-build-push.yml   # GitHub Actions CI/CD pipeline
+```
 ##  Generating a Docker Hub Access Token
 
 1. Open [hub.docker.com](https://hub.docker.com) and log in.
@@ -119,18 +132,24 @@ docker logs my-nginx
 # -f  → Force remove: stops the container if running before deleting it.
 # ==============================================
 docker rm -f my-nginx
+```
 Open your browser to http://localhost:8080 – you should see the Nginx welcome page.
 
+
+
+
 <details> <summary> Observation: What just happened?</summary> You downloaded a ready‑made filesystem (an image) that someone else built and published. The `run` command created an isolated process (a container) from that image. Port mapping made it reachable from your browser. This is the fundamental “pull → run” flow you’ll repeat with your own image. </details>
- Phase 1 – Build, Push, Pull & Share Your Own Image
+ 
+ # Phase 1 – Build, Push, Pull & Share Your Own Image
 Now you’ll become the image creator and share your work with classmates.
 
 1. Create the Web Application
 Create a new project folder and add the following files.
 The code is deliberately heavily commented so that every line makes sense.
 
-app.py
+## app.py
 
+```python
 python
 # Import necessary modules.
 # Flask: the web framework.
@@ -167,9 +186,11 @@ def health():
 # host='0.0.0.0' makes Flask listen on all network interfaces inside the container.
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
-templates/index.html
+```
 
-html
+
+### templates/index.html
+```html
 <!DOCTYPE html>
 <html>
 <head>
@@ -182,16 +203,23 @@ html
     <p>This container is alive and running!</p>
 </body>
 </html>
-requirements.txt
+```
 
-text
+### requirements.txt
+
+```text
 # Pin Flask version 3.0.0 for reproducible builds.
 flask==3.0.0
+```
+
 <details> <summary> Why use an environment variable for the node name?</summary> It externalises configuration. In production you could inject the pod name, hostname, or any identifier without rebuilding the image. This is a basic but crucial practice for portable containers. </details>
-2. Write a Secure Dockerfile
+
+### 2. Write a Secure Dockerfile
 Create a file named Dockerfile (no extension). Read the comments – they explain every instruction.
 
-dockerfile
+### dockerfile
+
+```dockerfile
 # ---- Minimal, secure production image ----
 # Base image: official Python 3.11, slim variant (smaller attack surface).
 FROM python:3.11-slim
@@ -239,15 +267,17 @@ EXPOSE 5000
 # --retries=3      If 3 consecutive checks fail, mark container unhealthy.
 # The CMD uses curl to call the /health endpoint; exit 1 on failure.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:5000/health || exit 1
+CMD curl -f http://localhost:5000/health || exit 1
+```
+---
 
-# Default command to run when the container starts.
-# The exec form ["python", "app.py"] runs the process directly (no shell),
-# which means Unix signals (SIGTERM, SIGKILL) are forwarded correctly.
-CMD ["python", "app.py"]
-.dockerignore (prevent unwanted files from entering the image)
+- Default command to run when the container starts.
+- The exec form ["python", "app.py"] runs the process directly (no shell),
+- which means Unix signals (SIGTERM, SIGKILL) are forwarded correctly.
+- CMD ["python", "app.py"]
 
-text
+  ### .dockerignore (prevent unwanted files from entering the image)
+```bash
 __pycache__
 *.pyc
 *.pyo
@@ -256,11 +286,15 @@ __pycache__
 *.md
 Dockerfile
 .dockerignore
-<details> <summary>🛡️Why a non‑root user?</summary> If an attacker compromises the application running as root, they might break out of the container to the host. A non‑root user respects the principle of least privilege. It’s a mandatory security hardening requirement in many organisations. </details><details> <summary>⚡ Why copy requirements.txt first, then install, then copy the rest?</summary> Docker caches each layer. If `requirements.txt` hasn’t changed, the `pip install` layer is reused, dramatically speeding up builds. Code changes alone won’t invalidate the dependency cache. This ordering is a fundamental optimisation for CI pipelines. </details>
-3. Build & Test Locally
+```
+
+
+<details> <summary>Why a non‑root user?</summary> If an attacker compromises the application running as root, they might break out of the container to the host. A non‑root user respects the principle of least privilege. It’s a mandatory security hardening requirement in many organisations. </details><details> <summary>⚡ Why copy requirements.txt first, then install, then copy the rest?</summary> Docker caches each layer. If `requirements.txt` hasn’t changed, the `pip install` layer is reused, dramatically speeding up builds. Code changes alone won’t invalidate the dependency cache. This ordering is a fundamental optimisation for CI pipelines. </details>
+
+### 3. Build & Test Locally
 Run these commands in your project folder.
 
-bash
+```bash
 # ==============================================
 # docker build -t my-web-app .
 # -t my-web-app  → Tag the resulting image with the name 'my-web-app'.
@@ -275,17 +309,20 @@ docker build -t my-web-app .
 # --name webapp-test → Name our container so we can easily refer to it.
 # my-web-app     → The image we built.
 # ==============================================
-docker run -d -p 5000:5000 --name webapp-test my-web-app
-Visit http://localhost:5000 and http://localhost:5000/health in your browser.
-Stop and remove the container when finished:
+docker run -d -p 5000:5000 --name webapp-test my-web-app 
+#===============================================
 
-bash
+``` 
+> Visit ``http://localhost:5000`` and ```http://localhost:5000/health``` in your browser.
+
+- #### Stop and remove the container when finished:
 docker rm -f webapp-test
-4. Push to Docker Hub
+
+### 4. Push to Docker Hub
 Authenticate with the access token, tag your image, and push it.
 Replace your-dockerhub-username with your actual username.
 
-bash
+``` bash
 # Log in: the -u flag specifies the username.
 # The command will prompt for a password – paste your access token (not your Docker Hub password).
 docker login -u your-dockerhub-username
@@ -300,12 +337,16 @@ docker tag my-web-app your-dockerhub-username/my-web-app:v1.0.0-john
 
 # Push the tagged image to Docker Hub.
 # This uploads all layers that aren’t already present in the registry.
+
+```
+
 docker push your-dockerhub-username/my-web-app:v1.0.0-john
 <details> <summary> Why do we need to tag before pushing?</summary> The tag tells Docker the full remote address: `docker.io/your-dockerhub-username/my-web-app:v1.0.0-john`. Without it, Docker wouldn’t know where to store the image. </details>
-5. Pull Your Own Image
+
+### 5. Pull Your Own Image
 Now act as a new user who doesn’t have the image locally. Delete your local copy, pull from Docker Hub, and run it.
 
-bash
+``` bash
 # Remove the local image (if it exists – ignore errors).
 docker rmi your-dockerhub-username/my-web-app:v1.0.0-john
 
@@ -316,19 +357,21 @@ docker pull your-dockerhub-username/my-web-app:v1.0.0-john
 docker run -d -p 5000:5000 --name pulled-app your-dockerhub-username/my-web-app:v1.0.0-john
 Test the endpoints again to confirm the image works identically to your local build.
 
-6. Share with Others
+```
+
+### 6. Share with Others
 Make sure your Docker Hub repository is public (you can change visibility on the web interface if needed).
 Share your image tag (e.g. your-dockerhub-username/my-web-app:v1.0.0-john) with classmates.
 They can run:
 
-bash
+``` bash
 docker pull your-dockerhub-username/my-web-app:v1.0.0-john
 docker run -d -p 5000:5000 your-dockerhub-username/my-web-app:v1.0.0-john
 They will see your personalised greeting and health endpoint – this simulates a real‑world scenario where teams share containerised services via a registry.
-
+```
 <details> <summary> What if the repository is private and a classmate tries to pull?</summary> Docker Hub will reject the request with an authentication error because anonymous pulls are only allowed for public repositories. In a corporate environment you would use a private registry with appropriate access controls. </details>
 
- Phase 2 – Automate with a DevSecOps Pipeline (GitHub Actions)
+ ## Phase 2 – Automate with a DevSecOps Pipeline (GitHub Actions)
 You will now build a CI/CD workflow that runs on every push to main. It will:
 
 Build the image
@@ -339,36 +382,38 @@ Push it to Docker Hub only if the scan passes
 
 Pull the image and run a smoke test to verify it works
 
-1. Set Up Your GitHub Repository
+### 1. Set Up Your GitHub Repository
 Initialise git, connect to GitHub, and push your code.
 
-bash
-git init                         # Create a new Git repository
-git add .                        # Stage all files
-git commit -m "Initial commit: Flask app, Dockerfile, and workflow"  # First commit
-git branch -M main               # Rename default branch to 'main'
-git remote add origin https://github.com/your-github-username/your-repo.git  # Link to remote
-git push -u origin main          # Push code; -u sets upstream tracking
-2. Add Secrets to GitHub
+
+- git init                         # Create a new Git repository
+- git add .                        # Stage all files
+- git commit -m "Initial commit: Flask app, Dockerfile, and workflow"  # First commit
+- git branch -M main               # Rename default branch to 'main'
+- git remote add origin https://github.com/your-github-username/your-repo.git  # Link to remote
+- git push -u origin main          # Push code; -u sets upstream tracking
+
+
+### 2. Add Secrets to GitHub
 Secrets are encrypted environment variables used in workflows. Never hard‑code credentials.
 
-On your GitHub repository page, go to Settings → Secrets and variables → Actions.
+On your GitHub repository page, ```go to Settings → Secrets and variables → Actions.```
 
 Click New repository secret.
 
 Add two secrets:
 
-DOCKERHUB_USERNAME – your Docker Hub username.
+**DOCKERHUB_USERNAME** – your Docker Hub username.
 
-DOCKERHUB_TOKEN – the access token you generated earlier.
+**DOCKERHUB_TOKEN** – the access token you generated earlier.
 
 The workflow will reference them as ${{ secrets.DOCKERHUB_USERNAME }} and ${{ secrets.DOCKERHUB_TOKEN }}.
 
-3. The Workflow File
+### 3. The Workflow File
 Create .github/workflows/docker-build-push.yml with the following content.
 The YAML file is annotated line‑by‑line – read every comment.
 
-yaml
+```yaml
 # The name of the workflow that appears in the GitHub Actions UI.
 name: Build, Scan, Push and Verify Docker Image
 
@@ -461,35 +506,42 @@ jobs:
       - name: Remove test container
         if: always()
         run: docker rm -f verify-container || true       # '|| true' prevents step failure if container doesn't exist
-4. Trigger the Pipeline
+```
+
+### 4. Trigger the Pipeline
 Commit and push the workflow file to main:
 
-bash
+``` bash
 git add .github/workflows/docker-build-push.yml
 git commit -m "Add DevSecOps CI pipeline"
 git push
 Go to your repository’s Actions tab. You’ll see the workflow running.
 Click on it to watch each step. If Trivy reports a HIGH/CRITICAL vulnerability, the job will fail – that’s intentional. You would then update your base image or dependencies and push again.
+```
 
-5. Pull the Automatically Built Image
+### 5. Pull the Automatically Built Image
 After a successful pipeline run, you and your classmates can pull the exact image produced by the CI system:
 
-bash
+``` bash
 docker pull your-dockerhub-username/my-web-app:v1.0.0-john
 docker run -d -p 5000:5000 your-dockerhub-username/my-web-app:v1.0.0-john
-It should behave exactly like your manual build – now you have an automated, security‑gated supply chain.
+```
 
- Clean Up
+> It should behave exactly like your manual build – now you have an automated, security‑gated supply chain.
+
+### Clean Up
 Remove all images and containers created during the lab:
 
-bash
+```bash
 # Force remove all running and stopped containers.
 # docker ps -aq lists all container IDs; 2>/dev/null suppresses “no containers” errors.
 docker rm -f $(docker ps -aq) 2>/dev/null
 
 # Remove the lab images (forcefully, ignore errors if they don’t exist).
 docker rmi my-web-app your-dockerhub-username/my-web-app:v1.0.0-john nginx:alpine 2>/dev/null
- Final Reflections
+```
+
+ ### Final Reflections
 Work through these questions after the hands‑on part. Click to reveal answers.
 
 What is the difference between a container image and a running container?
@@ -507,9 +559,10 @@ If you wanted to deploy this image to Kubernetes, what additional pipeline steps
 How could you further secure the supply chain of this image?
 
 <details> <summary>Answer</summary> Sign the image with Cosign, pin base image digests instead of tags, generate a Software Bill of Materials (SBOM), and verify signatures at deployment time. These practices provide integrity guarantees and are increasingly required in regulated industries. </details>
- Contributing / License
+
+ ### Contributing / License
 This project is intended for learning. Feel free to fork, extend, and share.
 Licensed under MIT – see LICENSE for details
 https://img.shields.io/badge/Lab%2520completed:-Manual%2520build%E2%86%92Push%E2%86%92Pull%E2%86%92Automation-blue?style=flat-square
 
-Happy DevSecOps learning!
+## Happy DevSecOps learning!
