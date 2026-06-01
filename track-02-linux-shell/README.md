@@ -12,4 +12,4 @@
 | 06 | Linux Hardening Basics | SSH keys, fail2ban, auditd, ufw | 🔴 Advanced | 75 min |
 
 ---
-*ParoCyber DevSecOps Bootcamp | Facilitated by Samuel Nartey*
+Facilitated by Samuel Nartey*
