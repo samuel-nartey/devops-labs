@@ -204,6 +204,17 @@ initDB()
   }
 }
 ```
+### File 4 of 4 — `.ebignore`
+
+```
+.env
+node_modules/
+.git/
+*.log
+```
+
+---
+
 
 ---
 
