@@ -318,7 +318,8 @@ This is the fastest way to confirm what actually took effect versus what you int
 
 <div align="center">
 
-**Built for DevSecOps Learners** •written by **Samuel Nartey** 
+**Built for DevSecOps Learners** •written by **Samuel Nartey** .
+
 
 ![Made with Linux](https://img.shields.io/badge/Made%20with-Linux-informational?style=flat-square&logo=linux)
 ![Learning](https://img.shields.io/badge/Learning-Together-blue?style=flat-square)
