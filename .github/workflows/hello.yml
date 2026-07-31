@@ -1,0 +1,34 @@
+name: practise workflow # name of workflow
+
+on: 
+  push   # trigger
+
+
+jobs:
+  FirstJob:     #1 job id(First job)
+    runs-on: ubuntu-latest
+    steps:
+      - name: greetings   # identifier for step 1
+        run:  echo "How are you learning"
+
+      - name:  print all files  # identifier for step 2
+        run:  ls -al
+
+  SecondJob:
+     runs-on: ubuntu-latest
+
+     steps: 
+       - name: print my name
+         run:   echo "Emmanuel"
+
+
+
+     
+
+
+        
+
+  
+  
+    
+  
