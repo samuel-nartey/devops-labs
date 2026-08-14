@@ -938,6 +938,1842 @@ Deploy
 This turns Trivy from a tool you run manually into an automated security control within your DevSecOps pipeline.
 
 ---
+# Trivy Practical Vulnerability Scanning Lab
+
+This section provides a practical Trivy laboratory environment containing intentionally vulnerable files and configurations.
+
+The purpose of this lab is to generate meaningful Trivy findings across different scanner types rather than scanning an empty or unsupported file.
+
+The lab contains:
+
+* Vulnerable application dependencies
+* A vulnerable Dockerfile
+* Fake AWS credentials for secret scanning
+* Fake GitHub-style tokens
+* Terraform misconfigurations
+* Kubernetes misconfigurations
+* CloudFormation misconfigurations
+* Configuration files containing insecure settings
+* License-testing files
+* A multi-scanner project for combined scanning
+* CI/CD security-gate examples
+
+> **Security Warning:** This laboratory is intentionally insecure. Use it only in a disposable training directory or lab environment. Never use the credentials in this example as real credentials.
+
+---
+
+# Create the Trivy Lab
+
+Create a new directory:
+
+```bash
+mkdir -p ~/trivy-security-lab
+cd ~/trivy-security-lab
+```
+
+Create the following directory structure:
+
+```text
+trivy-security-lab/
+├── app/
+│   ├── package.json
+│   ├── requirements.txt
+│   └── .env
+├── secrets/
+│   ├── aws-credentials.txt
+│   ├── application.env
+│   └── deployment.yaml
+├── docker/
+│   └── Dockerfile
+├── terraform/
+│   └── main.tf
+├── kubernetes/
+│   └── deployment.yaml
+├── cloudformation/
+│   └── insecure-stack.yaml
+├── config/
+│   ├── nginx.conf
+│   └── application.yaml
+├── licenses/
+│   └── THIRD-PARTY-LICENSE.txt
+└── README.md
+```
+
+You can create the directories with:
+
+```bash
+mkdir -p app secrets docker terraform kubernetes cloudformation config licenses
+```
+
+---
+
+# 1. Vulnerable Node.js Application
+
+Create:
+
+```bash
+nano app/package.json
+```
+
+Add:
+
+```json
+{
+  "name": "trivy-vulnerable-demo",
+  "version": "1.0.0",
+  "description": "Intentionally vulnerable Node.js application for Trivy training",
+  "private": true,
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "4.17.1",
+    "lodash": "4.17.15",
+    "axios": "0.21.1",
+    "minimist": "1.2.0",
+    "handlebars": "4.5.3",
+    "jsonwebtoken": "8.5.1",
+    "node-fetch": "2.6.0",
+    "serialize-javascript": "3.0.0",
+    "tar": "4.4.13",
+    "underscore": "1.8.3"
+  }
+}
+```
+
+These versions are deliberately old and are included for vulnerability-scanning practice.
+
+However, there is an important point:
+
+**Do not expect Trivy to report vulnerabilities from this file alone.**
+
+For Node.js dependency scanning, Trivy works particularly well when dependency lock files such as `package-lock.json` are available.
+
+---
+
+# 2. Generate package-lock.json
+
+Install Node.js and npm if they are not already installed:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y nodejs npm
+```
+
+Move into the application directory:
+
+```bash
+cd ~/trivy-security-lab/app
+```
+
+Generate the dependency lock file:
+
+```bash
+npm install --package-lock-only
+```
+
+Check the files:
+
+```bash
+ls -la
+```
+
+You should now have:
+
+```text
+package.json
+package-lock.json
+```
+
+Now return to the lab directory:
+
+```bash
+cd ~/trivy-security-lab
+```
+
+Run:
+
+```bash
+trivy fs app
+```
+
+This time Trivy should be able to identify the Node.js dependency information.
+
+You can specifically run:
+
+```bash
+trivy fs --scanners vuln app
+```
+
+---
+
+# 3. Scan Only HIGH and CRITICAL Vulnerabilities
+
+Run:
+
+```bash
+trivy fs \
+  --scanners vuln \
+  --severity HIGH,CRITICAL \
+  app
+```
+
+This is useful for simulating a CI/CD security policy where only serious vulnerabilities block the pipeline.
+
+---
+
+# 4. Create a Python Vulnerable Dependency File
+
+Create:
+
+```bash
+nano app/requirements.txt
+```
+
+Add:
+
+```text
+Django==2.2.0
+Flask==0.12.2
+requests==2.19.1
+urllib3==1.24.1
+PyYAML==5.1
+Jinja2==2.10
+Pillow==6.2.0
+cryptography==2.8
+paramiko==2.4.2
+SQLAlchemy==1.2.0
+```
+
+These versions are intentionally outdated for laboratory purposes.
+
+Run:
+
+```bash
+trivy fs --scanners vuln app
+```
+
+You can also focus on serious findings:
+
+```bash
+trivy fs \
+  --scanners vuln \
+  --severity HIGH,CRITICAL \
+  app
+```
+
+---
+
+# 5. Create a Fake Secrets File
+
+Now we will deliberately create files containing **fake credentials**.
+
+These credentials are not real AWS credentials.
+
+Create:
+
+```bash
+nano secrets/aws-credentials.txt
+```
+
+Add:
+
+```text
+# ============================================================
+# TRIVY SECRET SCANNING LAB
+# THESE ARE FAKE TRAINING CREDENTIALS
+# DO NOT USE THEM
+# ============================================================
+
+AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+AWS_DEFAULT_REGION=us-east-1
+
+AWS_ACCOUNT_ID=123456789012
+
+DATABASE_USERNAME=admin
+DATABASE_PASSWORD=TrivyTrainingPassword123!
+
+API_KEY=trivy-demo-api-key-123456789
+APPLICATION_SECRET=training-secret-value-123456789
+```
+
+The AWS values above are intentionally example values and should never be used as credentials.
+
+Trivy includes built-in secret-detection rules for things such as AWS access keys, GCP service accounts, GitHub tokens, GitLab tokens, and Slack tokens.
+
+---
+
+# 6. Create an Application Environment File
+
+Create:
+
+```bash
+nano secrets/application.env
+```
+
+Add:
+
+```text
+# Intentionally insecure training configuration
+
+APP_ENV=production
+
+DB_HOST=database.internal
+DB_PORT=5432
+DB_NAME=production
+DB_USER=admin
+DB_PASSWORD=SuperSecretTrainingPassword123
+
+REDIS_PASSWORD=RedisTrainingPassword123
+
+AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+
+STRIPE_SECRET_KEY=sk_test_51TrainingOnlyExample
+JWT_SECRET=training-jwt-secret-change-me
+
+GITHUB_TOKEN=ghp_example_training_token_123456789
+SLACK_TOKEN=xoxb-training-example-token
+
+INTERNAL_API_KEY=internal-training-api-key-123456789
+```
+
+Run:
+
+```bash
+trivy fs --scanners secret secrets
+```
+
+---
+
+# 7. Scan the Entire Lab for Secrets
+
+From:
+
+```bash
+cd ~/trivy-security-lab
+```
+
+run:
+
+```bash
+trivy fs --scanners secret .
+```
+
+You should now have several plaintext files for Trivy's secret scanner to inspect.
+
+Trivy's secret scanner scans plaintext files using built-in rules and can identify several types of exposed credentials and keys.
+
+---
+
+# 8. Create an Intentionally Insecure Dockerfile
+
+Create:
+
+```bash
+nano docker/Dockerfile
+```
+
+Add:
+
+```dockerfile
+# ============================================================
+# INTENTIONALLY INSECURE DOCKERFILE
+# FOR TRIVY TRAINING ONLY
+# ============================================================
+
+FROM ubuntu:latest
+
+# Running package installation without pinning versions
+RUN apt-get update
+
+# Install unnecessary packages
+RUN apt-get install -y \
+    curl \
+    wget \
+    sudo \
+    netcat \
+    vim
+
+# Store credentials directly inside the image
+ENV AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+ENV AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+
+ENV DATABASE_PASSWORD=SuperSecretTrainingPassword123
+
+# Create an unnecessary privileged user
+RUN useradd -m devops
+
+# Grant excessive sudo privileges
+RUN echo "devops ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# Copy everything into the image
+COPY . /app
+
+WORKDIR /app
+
+# Run application as root
+USER root
+
+# Expose an arbitrary application port
+EXPOSE 8080
+
+# Insecure shell command
+CMD ["bash"]
+```
+
+Now scan it:
+
+```bash
+trivy config docker/Dockerfile
+```
+
+Trivy's configuration scanner supports Dockerfiles and other Infrastructure-as-Code formats.
+
+---
+
+# 9. Scan the Dockerfile Using Filesystem Scanning
+
+You can also scan the entire directory:
+
+```bash
+trivy fs \
+  --scanners misconfig,secret \
+  docker
+```
+
+This demonstrates an important difference:
+
+```text
+trivy config
+        |
+        +-- Primarily configuration/IaC scanning
+
+trivy fs
+        |
+        +-- Can combine vulnerability,
+            misconfiguration and secret scanning
+```
+
+Trivy allows filesystem scanning to use multiple scanners simultaneously.
+
+---
+
+# 10. Create an Insecure Terraform Configuration
+
+Create:
+
+```bash
+nano terraform/main.tf
+```
+
+Add:
+
+```hcl
+# ============================================================
+# INTENTIONALLY INSECURE TERRAFORM
+# FOR TRIVY TRAINING ONLY
+# ============================================================
+
+terraform {
+  required_version = ">= 1.0.0"
+}
+
+provider "aws" {
+  region = "us-east-1"
+}
+
+# ------------------------------------------------------------
+# Insecure S3 bucket
+# ------------------------------------------------------------
+
+resource "aws_s3_bucket" "training_bucket" {
+  bucket = "trivy-training-insecure-bucket"
+
+  tags = {
+    Environment = "production"
+    Purpose     = "security-training"
+  }
+}
+
+# ------------------------------------------------------------
+# Public bucket ACL
+# ------------------------------------------------------------
+
+resource "aws_s3_bucket_acl" "training_acl" {
+  bucket = aws_s3_bucket.training_bucket.id
+
+  acl = "public-read"
+}
+
+# ------------------------------------------------------------
+# Insecure security group
+# ------------------------------------------------------------
+
+resource "aws_security_group" "training_sg" {
+  name        = "trivy-insecure-security-group"
+  description = "Intentionally insecure security group"
+
+  ingress {
+    description = "Allow SSH from anywhere"
+
+    from_port = 22
+    to_port   = 22
+    protocol  = "tcp"
+
+    cidr_blocks = [
+      "0.0.0.0/0"
+    ]
+  }
+
+  ingress {
+    description = "Allow HTTP from anywhere"
+
+    from_port = 80
+    to_port   = 80
+    protocol  = "tcp"
+
+    cidr_blocks = [
+      "0.0.0.0/0"
+    ]
+  }
+
+  ingress {
+    description = "Allow database access from anywhere"
+
+    from_port = 3306
+    to_port   = 3306
+    protocol  = "tcp"
+
+    cidr_blocks = [
+      "0.0.0.0/0"
+    ]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+# ------------------------------------------------------------
+# IAM policy with excessive permissions
+# ------------------------------------------------------------
+
+resource "aws_iam_policy" "insecure_policy" {
+  name = "trivy-training-insecure-policy"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+
+    Statement = [
+      {
+        Effect = "Allow"
+
+        Action = "*"
+
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# ------------------------------------------------------------
+# Hard-coded credentials for training
+# ------------------------------------------------------------
+
+variable "database_password" {
+  default = "SuperSecretTrainingPassword123"
+}
+
+variable "api_key" {
+  default = "trivy-training-api-key-123456789"
+}
+```
+
+Do **not** deploy this Terraform configuration.
+
+It is deliberately designed to contain multiple security problems for scanning.
+
+---
+
+# 11. Scan Terraform
+
+Run:
+
+```bash
+trivy config terraform
+```
+
+You can also specify the scanner explicitly:
+
+```bash
+trivy fs \
+  --scanners misconfig,secret \
+  terraform
+```
+
+Trivy supports Terraform as one of its Infrastructure-as-Code misconfiguration scanners.
+
+---
+
+# 12. Create an Insecure Kubernetes Deployment
+
+Create:
+
+```bash
+nano kubernetes/deployment.yaml
+```
+
+Add:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: trivy-insecure-app
+
+  labels:
+    app: trivy-insecure-app
+
+spec:
+
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: trivy-insecure-app
+
+  template:
+
+    metadata:
+      labels:
+        app: trivy-insecure-app
+
+    spec:
+
+      hostNetwork: true
+
+      hostPID: true
+
+      hostIPC: true
+
+      containers:
+
+        - name: insecure-app
+
+          image: nginx:latest
+
+          securityContext:
+
+            privileged: true
+
+            allowPrivilegeEscalation: true
+
+            runAsUser: 0
+
+            runAsGroup: 0
+
+            readOnlyRootFilesystem: false
+
+          ports:
+
+            - containerPort: 80
+
+          env:
+
+            - name: DATABASE_PASSWORD
+              value: "SuperSecretTrainingPassword123"
+
+            - name: AWS_ACCESS_KEY_ID
+              value: "AKIAIOSFODNN7EXAMPLE"
+
+            - name: AWS_SECRET_ACCESS_KEY
+              value: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+
+          resources:
+
+            requests:
+
+              cpu: "10m"
+
+            limits:
+
+              cpu: "4"
+
+              memory: "4Gi"
+
+---
+
+apiVersion: v1
+
+kind: Service
+
+metadata:
+
+  name: trivy-insecure-service
+
+spec:
+
+  type: LoadBalancer
+
+  selector:
+
+    app: trivy-insecure-app
+
+  ports:
+
+    - protocol: TCP
+
+      port: 80
+
+      targetPort: 80
+```
+
+Do not apply this manifest to a real Kubernetes cluster.
+
+---
+
+# 13. Scan Kubernetes Configuration
+
+Run:
+
+```bash
+trivy config kubernetes
+```
+
+You can also run:
+
+```bash
+trivy fs \
+  --scanners misconfig,secret \
+  kubernetes
+```
+
+Trivy's misconfiguration scanner supports Kubernetes configuration files.
+
+---
+
+# 14. Create an Insecure CloudFormation Template
+
+Create:
+
+```bash
+nano cloudformation/insecure-stack.yaml
+```
+
+Add:
+
+```yaml
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: >
+  Intentionally insecure CloudFormation template
+  for Trivy security scanning training.
+
+Resources:
+
+  PublicSecurityGroup:
+
+    Type: AWS::EC2::SecurityGroup
+
+    Properties:
+
+      GroupDescription: Insecure security group for Trivy training
+
+      SecurityGroupIngress:
+
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: 0.0.0.0/0
+
+  PublicBucket:
+
+    Type: AWS::S3::Bucket
+
+    Properties:
+
+      AccessControl: PublicRead
+
+      BucketName: trivy-training-public-bucket
+
+      Tags:
+
+        - Key: Environment
+          Value: production
+
+  InsecureInstance:
+
+    Type: AWS::EC2::Instance
+
+    Properties:
+
+      InstanceType: t2.micro
+
+      ImageId: ami-00000000000000000
+
+      SecurityGroupIds:
+
+        - !Ref PublicSecurityGroup
+
+      UserData:
+
+        Fn::Base64: !Sub |
+
+          #!/bin/bash
+
+          export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+
+          export AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+
+          export DATABASE_PASSWORD=SuperSecretTrainingPassword123
+
+          echo "Training application started"
+```
+
+This file is intentionally insecure and contains a placeholder AMI ID.
+
+**Do not deploy it.**
+
+---
+
+# 15. Scan CloudFormation
+
+Run:
+
+```bash
+trivy config cloudformation
+```
+
+Or:
+
+```bash
+trivy fs \
+  --scanners misconfig,secret \
+  cloudformation
+```
+
+Trivy's misconfiguration scanner supports CloudFormation templates.
+
+---
+
+# 16. Create an Insecure Application Configuration
+
+Create:
+
+```bash
+nano config/application.yaml
+```
+
+Add:
+
+```yaml
+application:
+
+  name: insecure-training-application
+
+  environment: production
+
+  debug: true
+
+  logging:
+    level: DEBUG
+
+  database:
+
+    host: database.internal
+
+    port: 5432
+
+    username: admin
+
+    password: SuperSecretTrainingPassword123
+
+    ssl: false
+
+  redis:
+
+    host: redis.internal
+
+    password: RedisTrainingPassword123
+
+    tls: false
+
+  security:
+
+    authentication: false
+
+    authorization: false
+
+    csrf_protection: false
+
+    session_secure: false
+
+    session_http_only: false
+
+  api:
+
+    api_key: trivy-training-api-key-123456789
+
+    allow_origins:
+      - "*"
+
+  aws:
+
+    access_key_id: AKIAIOSFODNN7EXAMPLE
+
+    secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+
+    region: us-east-1
+```
+
+Scan it:
+
+```bash
+trivy fs --scanners secret config
+```
+
+---
+
+# 17. Create an NGINX Configuration
+
+Create:
+
+```bash
+nano config/nginx.conf
+```
+
+Add:
+
+```nginx
+# ============================================================
+# INTENTIONALLY INSECURE NGINX CONFIGURATION
+# FOR TRIVY TRAINING
+# ============================================================
+
+user root;
+
+worker_processes 1;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+
+    server {
+
+        listen 80;
+
+        server_name _;
+
+        # Directory listing enabled
+        autoindex on;
+
+        # Proxy requests to an internal service
+        location / {
+
+            proxy_pass http://127.0.0.1:8080;
+
+            proxy_set_header Host $host;
+
+            proxy_set_header X-Real-IP $remote_addr;
+
+        }
+
+        # Expose sensitive files
+        location /backup {
+
+            alias /var/backups/;
+
+            autoindex on;
+
+        }
+
+        # Debug endpoint
+        location /debug {
+
+            return 200 "DEBUG MODE ENABLED";
+
+        }
+    }
+}
+```
+
+Run:
+
+```bash
+trivy fs --scanners secret,misconfig config
+```
+
+Note that Trivy's built-in misconfiguration coverage is primarily aimed at supported configuration/IaC formats; not every arbitrary application configuration file will produce findings.
+
+---
+
+# 18. License Scanning
+
+Create:
+
+```bash
+nano licenses/THIRD-PARTY-LICENSE.txt
+```
+
+Add:
+
+```text
+THIRD-PARTY SOFTWARE LICENSE INFORMATION
+
+============================================================
+Training Dependency A
+============================================================
+
+Copyright 2026 Trivy Training Lab
+
+This software is distributed under the GNU General Public
+License version 3.
+
+This file is intentionally included for license-scanning
+training.
+
+------------------------------------------------------------
+
+GNU GENERAL PUBLIC LICENSE
+
+Version 3, 29 June 2007
+
+Everyone is permitted to copy and distribute verbatim copies
+of this license document, but changing it is not allowed.
+
+This license text is included solely as a laboratory artifact.
+
+============================================================
+
+Training Dependency B
+============================================================
+
+License: Apache License 2.0
+
+This component is included as a second license example.
+
+============================================================
+
+Training Dependency C
+============================================================
+
+License: MIT
+
+This component is included as a third license example.
+
+============================================================
+
+Training Dependency D
+============================================================
+
+License: UNKNOWN
+
+This component intentionally represents an unknown license
+classification for training purposes.
+```
+
+License scanning is available in Trivy and can be explicitly enabled with `--scanners license`. Full license scanning can additionally inspect source files, Markdown files, text files, and license documents.
+
+Run:
+
+```bash
+trivy fs \
+  --scanners license \
+  licenses
+```
+
+For extended scanning:
+
+```bash
+trivy fs \
+  --scanners license \
+  --license-full \
+  licenses
+```
+
+---
+
+# 19. Scan the Entire Laboratory
+
+Now return to the root directory:
+
+```bash
+cd ~/trivy-security-lab
+```
+
+Run the normal filesystem scan:
+
+```bash
+trivy fs .
+```
+
+The default filesystem scan includes vulnerability and secret scanning.
+
+---
+
+# 20. Run All Major Scanners Together
+
+Run:
+
+```bash
+trivy fs \
+  --scanners vuln,misconfig,secret,license \
+  .
+```
+
+This is one of the most useful commands in this laboratory.
+
+The supported scanner types include:
+
+```text
+vuln
+misconfig
+secret
+license
+```
+
+Trivy's current CLI documentation lists these as the scanner types available to the filesystem and image commands.
+
+---
+
+# 21. Run All Scanners and Show Only HIGH and CRITICAL
+
+Run:
+
+```bash
+trivy fs \
+  --scanners vuln,misconfig,secret,license \
+  --severity HIGH,CRITICAL \
+  .
+```
+
+This simulates a security policy where the organization considers HIGH and CRITICAL findings to be pipeline-blocking issues.
+
+---
+
+# 22. Scan Individual Scenarios
+
+Instead of scanning everything at once, test each security category separately.
+
+## Vulnerability Scanning
+
+```bash
+trivy fs \
+  --scanners vuln \
+  app/
+```
+
+---
+
+## Secret Scanning
+
+```bash
+trivy fs \
+  --scanners secret \
+  secrets/
+```
+
+---
+
+## Terraform Misconfiguration Scanning
+
+```bash
+trivy config terraform/
+```
+
+---
+
+## Kubernetes Misconfiguration Scanning
+
+```bash
+trivy config kubernetes/
+```
+
+---
+
+## CloudFormation Misconfiguration Scanning
+
+```bash
+trivy config cloudformation/
+```
+
+---
+
+## Dockerfile Misconfiguration Scanning
+
+```bash
+trivy config docker/
+```
+
+---
+
+## License Scanning
+
+```bash
+trivy fs \
+  --scanners license \
+  --license-full \
+  licenses/
+```
+
+---
+
+# 23. Combine Vulnerability and Secret Scanning
+
+Run:
+
+```bash
+trivy fs \
+  --scanners vuln,secret \
+  .
+```
+
+This asks Trivy to look for both dependency vulnerabilities and exposed secrets.
+
+---
+
+# 24. Combine Vulnerability and Misconfiguration Scanning
+
+Run:
+
+```bash
+trivy fs \
+  --scanners vuln,misconfig \
+  .
+```
+
+This is useful for projects containing both application dependencies and IaC.
+
+---
+
+# 25. Combine Misconfiguration and Secret Scanning
+
+Run:
+
+```bash
+trivy fs \
+  --scanners misconfig,secret \
+  .
+```
+
+This is particularly useful for infrastructure repositories containing:
+
+* Terraform
+* Kubernetes
+* Dockerfiles
+* CloudFormation
+* Configuration files
+* Environment files
+
+---
+
+# 26. Scan Everything and Save JSON Results
+
+You can save the scan results to a JSON file.
+
+Run:
+
+```bash
+trivy fs \
+  --scanners vuln,misconfig,secret,license \
+  --format json \
+  --output trivy-results.json \
+  .
+```
+
+Check the file:
+
+```bash
+ls -lh trivy-results.json
+```
+
+View it:
+
+```bash
+less trivy-results.json
+```
+
+This is useful for CI/CD systems because JSON results can be consumed by other tools.
+
+---
+
+# 27. Save the Results as SARIF
+
+SARIF is commonly used by security tooling and code-scanning systems.
+
+Run:
+
+```bash
+trivy fs \
+  --scanners vuln,misconfig,secret \
+  --format sarif \
+  --output trivy-results.sarif \
+  .
+```
+
+Check the result:
+
+```bash
+ls -lh trivy-results.sarif
+```
+
+---
+
+# 28. Generate a Table Report
+
+The default human-readable output is useful when learning.
+
+Run:
+
+```bash
+trivy fs \
+  --scanners vuln,misconfig,secret \
+  --format table \
+  .
+```
+
+---
+
+# 29. Create a Security Gate
+
+Now simulate a CI/CD security gate.
+
+Run:
+
+```bash
+trivy fs \
+  --scanners vuln,misconfig,secret \
+  --severity HIGH,CRITICAL \
+  --exit-code 1 \
+  .
+```
+
+The important option is:
+
+```text
+--exit-code 1
+```
+
+If Trivy discovers findings matching the selected severity threshold, the command can return a non-zero exit status.
+
+Check the result:
+
+```bash
+echo $?
+```
+
+If the security gate failed, you should see:
+
+```text
+1
+```
+
+If no findings matched the selected threshold, you may see:
+
+```text
+0
+```
+
+This is the same principle used to make a CI/CD pipeline fail when security requirements are not met.
+
+---
+
+# 30. Demonstrate the Difference Between Scanners
+
+Run these commands separately.
+
+### Vulnerabilities
+
+```bash
+trivy fs --scanners vuln app/
+```
+
+Question:
+
+> Are vulnerable dependencies present?
+
+---
+
+### Secrets
+
+```bash
+trivy fs --scanners secret secrets/
+```
+
+Question:
+
+> Are credentials or sensitive values exposed?
+
+---
+
+### Misconfigurations
+
+```bash
+trivy config terraform/
+```
+
+Question:
+
+> Are infrastructure resources configured insecurely?
+
+---
+
+### License Issues
+
+```bash
+trivy fs --scanners license --license-full licenses/
+```
+
+Question:
+
+> What licenses are present and how does Trivy classify them?
+
+---
+
+# 31. Scan a Single File
+
+Trivy can also scan a single supported file.
+
+For example:
+
+```bash
+trivy config terraform/main.tf
+```
+
+Or:
+
+```bash
+trivy config kubernetes/deployment.yaml
+```
+
+This is useful when troubleshooting a particular configuration file.
+
+---
+
+# 32. Scan Multiple Directories
+
+You can scan the entire project:
+
+```bash
+trivy fs .
+```
+
+Or scan individual areas:
+
+```bash
+trivy fs app/
+trivy fs secrets/
+trivy fs docker/
+trivy fs terraform/
+trivy fs kubernetes/
+```
+
+This makes it easier to understand which scanner is responsible for each finding.
+
+---
+
+# 33. Why Your Original Test Returned No Vulnerabilities
+
+Your original command was:
+
+```bash
+trivy fs .
+```
+
+The directory contained:
+
+```text
+package.json
+```
+
+but did not contain a dependency lock file such as:
+
+```text
+package-lock.json
+```
+
+Your output showed:
+
+```text
+Number of language-specific files: 0
+```
+
+and:
+
+```text
+Supported files for scanner(s) not found
+```
+
+That means Trivy did not find a supported dependency file that it could use for vulnerability analysis.
+
+After generating:
+
+```text
+package-lock.json
+```
+
+run:
+
+```bash
+trivy fs .
+```
+
+again.
+
+You should now have a dependency file that Trivy can analyze.
+
+---
+
+# 34. Recommended Lab Sequence
+
+Do not run everything at once initially.
+
+Work through the laboratory in this order.
+
+### Stage 1 — Dependency Vulnerabilities
+
+```bash
+trivy fs --scanners vuln app/
+```
+
+Learn how Trivy identifies vulnerable packages.
+
+---
+
+### Stage 2 — Secret Scanning
+
+```bash
+trivy fs --scanners secret secrets/
+```
+
+Learn how Trivy identifies exposed credentials.
+
+---
+
+### Stage 3 — Docker Security
+
+```bash
+trivy config docker/
+```
+
+Learn how Dockerfile misconfigurations are identified.
+
+---
+
+### Stage 4 — Terraform Security
+
+```bash
+trivy config terraform/
+```
+
+Learn how IaC security problems are identified.
+
+---
+
+### Stage 5 — Kubernetes Security
+
+```bash
+trivy config kubernetes/
+```
+
+Learn how Kubernetes configuration problems are identified.
+
+---
+
+### Stage 6 — CloudFormation Security
+
+```bash
+trivy config cloudformation/
+```
+
+Learn how AWS infrastructure configuration can be scanned.
+
+---
+
+### Stage 7 — License Scanning
+
+```bash
+trivy fs \
+  --scanners license \
+  --license-full \
+  licenses/
+```
+
+Learn how Trivy analyzes software licenses.
+
+---
+
+### Stage 8 — Full Project Scan
+
+Finally:
+
+```bash
+trivy fs \
+  --scanners vuln,misconfig,secret,license \
+  .
+```
+
+---
+
+# 35. Simulate a Real DevSecOps Pipeline
+
+After completing the individual scans, simulate a complete CI/CD security process.
+
+```text
+Developer
+    |
+    v
+Git Push
+    |
+    v
+Checkout Source Code
+    |
+    v
+Dependency Installation
+    |
+    v
+Unit Tests
+    |
+    v
+Trivy Vulnerability Scan
+    |
+    +---- HIGH/CRITICAL ----> FAIL
+    |
+    v
+Build Docker Image
+    |
+    v
+Trivy Image Scan
+    |
+    +---- HIGH/CRITICAL ----> FAIL
+    |
+    v
+Trivy IaC Scan
+    |
+    +---- Misconfiguration ----> FAIL
+    |
+    v
+Trivy Secret Scan
+    |
+    +---- Secret Found ----> FAIL
+    |
+    v
+Push Image
+    |
+    v
+Deploy
+```
+
+This demonstrates the principle of **DevSecOps security gates**.
+
+---
+
+# 36. Useful Trivy Command Reference
+
+| Scenario              | Command                                                  |
+| --------------------- | -------------------------------------------------------- |
+| Check version         | `trivy --version`                                        |
+| Basic filesystem scan | `trivy fs .`                                             |
+| Vulnerability scan    | `trivy fs --scanners vuln .`                             |
+| Secret scan           | `trivy fs --scanners secret .`                           |
+| Misconfiguration scan | `trivy fs --scanners misconfig .`                        |
+| License scan          | `trivy fs --scanners license .`                          |
+| Dockerfile scan       | `trivy config docker/`                                   |
+| Terraform scan        | `trivy config terraform/`                                |
+| Kubernetes scan       | `trivy config kubernetes/`                               |
+| CloudFormation scan   | `trivy config cloudformation/`                           |
+| HIGH/CRITICAL only    | `trivy fs --severity HIGH,CRITICAL .`                    |
+| All major scanners    | `trivy fs --scanners vuln,misconfig,secret,license .`    |
+| JSON report           | `trivy fs --format json --output trivy-results.json .`   |
+| SARIF report          | `trivy fs --format sarif --output trivy-results.sarif .` |
+| CI/CD security gate   | `trivy fs --severity HIGH,CRITICAL --exit-code 1 .`      |
+
+---
+
+# 37. Important Trivy Concept
+
+Do not assume that:
+
+```bash
+trivy fs .
+```
+
+means:
+
+> "Scan every possible security problem in every file."
+
+Instead, Trivy uses different scanners for different types of security analysis.
+
+For example:
+
+```text
+                    TRIVY
+                      |
+       +--------------+--------------+
+       |              |              |
+       v              v              v
+   Vulnerability   Secret       Misconfiguration
+       |              |              |
+       v              v              v
+Dependencies      Credentials       IaC
+Packages          API Keys          Terraform
+CVEs              Tokens            Kubernetes
+                  Passwords         Dockerfile
+                                    CloudFormation
+
+                      +
+                      |
+                      v
+                  License
+                      |
+                      v
+                License Analysis
+```
+
+The current Trivy documentation identifies vulnerability and secret scanning as enabled by default for filesystem scanning, while misconfiguration and license scanning can be explicitly enabled with `--scanners`.
+
+---
+
+# 38. Expected Outcome
+
+By the end of this laboratory, your project should contain multiple categories of findings:
+
+```text
+trivy-security-lab/
+│
+├── Vulnerabilities
+│   ├── Node.js dependencies
+│   └── Python dependencies
+│
+├── Secrets
+│   ├── Fake AWS credentials
+│   ├── Fake API keys
+│   └── Fake application passwords
+│
+├── Docker Misconfigurations
+│   ├── Unpinned base image
+│   ├── Root user
+│   ├── Excessive packages
+│   └── Insecure configuration
+│
+├── Terraform Misconfigurations
+│   ├── Public S3 bucket
+│   ├── 0.0.0.0/0 ingress
+│   ├── Excessive IAM permissions
+│   └── Hard-coded secrets
+│
+├── Kubernetes Misconfigurations
+│   ├── Privileged container
+│   ├── Root user
+│   ├── hostNetwork
+│   ├── hostPID
+│   └── hostIPC
+│
+└── CloudFormation Misconfigurations
+    ├── Public security group
+    ├── Public S3 bucket
+    └── Hard-coded credentials
+```
+
+The exact number of findings will vary depending on your installed Trivy version, vulnerability database, scanner configuration, and current vulnerability data.
+
+---
+
+# 39. Final Full Scan
+
+Once everything has been created, run:
+
+```bash
+cd ~/trivy-security-lab
+
+trivy fs \
+  --scanners vuln,misconfig,secret,license \
+  --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL \
+  .
+```
+
+For a CI/CD-style test:
+
+```bash
+trivy fs \
+  --scanners vuln,misconfig,secret \
+  --severity HIGH,CRITICAL \
+  --exit-code 1 \
+  .
+```
+
+For a machine-readable report:
+
+```bash
+trivy fs \
+  --scanners vuln,misconfig,secret \
+  --format json \
+  --output trivy-results.json \
+  .
+```
+
+For a GitHub-compatible SARIF report:
+
+```bash
+trivy fs \
+  --scanners vuln,misconfig,secret \
+  --format sarif \
+  --output trivy-results.sarif \
+  .
+```
+
+---
+
+# What You Should Learn From This Lab
+
+The most important lesson is that **Trivy is not one scanner doing one thing**.
+
+It is a collection of security capabilities that can be applied to different targets.
+
+You should be able to explain the following after completing the lab:
+
+| Question                                 | Answer                                                                   |
+| ---------------------------------------- | ------------------------------------------------------------------------ |
+| What does `trivy fs` scan?               | A local filesystem/project                                               |
+| What does `trivy image` scan?            | A container image                                                        |
+| What does `trivy config` scan?           | Supported IaC/configuration files                                        |
+| What does `--scanners vuln` do?          | Enables vulnerability scanning                                           |
+| What does `--scanners secret` do?        | Enables secret scanning                                                  |
+| What does `--scanners misconfig` do?     | Enables misconfiguration scanning                                        |
+| What does `--scanners license` do?       | Enables license scanning                                                 |
+| What does `--severity HIGH,CRITICAL` do? | Filters displayed findings by severity                                   |
+| What does `--exit-code 1` do?            | Allows findings to cause a non-zero exit status                          |
+| Why use `package-lock.json`?             | It gives Trivy dependency information for Node.js vulnerability analysis |
+| Why use `trivy config`?                  | To analyze supported Infrastructure-as-Code/configuration files          |
+| Why use `--format json`?                 | To produce machine-readable results                                      |
+| Why use SARIF?                           | To integrate scan results with security/code-scanning workflows          |
+
+This is the difference between simply knowing how to run:
+
+```bash
+trivy fs .
+```
+
+and actually understanding how Trivy fits into a DevSecOps pipeline.
+
 
 ## Author
 
