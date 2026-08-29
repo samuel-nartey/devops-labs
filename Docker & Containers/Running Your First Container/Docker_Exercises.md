@@ -31,7 +31,7 @@ Write a Dockerfile for this app that meets ALL of the following requirements:
 
 ## How to Practice
 
-Write your Dockerfile below (or in your own editor), then paste it back into the chat so it can be checked line by line against each of the 7 requirements above.
+Write your Dockerfile below (or in your own editor), then it will be checked line by line against each of the 7 requirements above.
 
 ```dockerfile
 # Write your Dockerfile here
@@ -42,7 +42,7 @@ Write your Dockerfile below (or in your own editor), then paste it back into the
 
 ## Self-Check Before Submitting
 
-Before you paste your answer, ask yourself:
+Before you submit your answer, ask yourself:
 
 - [ ] Did I pick the right base image and tag?
 - [ ] Is WORKDIR set before I try to COPY or RUN anything that depends on it?
