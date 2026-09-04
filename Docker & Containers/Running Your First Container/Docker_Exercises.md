@@ -109,85 +109,276 @@ Write your Dockerfile.Marked out of 100 against each requirement, same as before
 - [ ] Is my final CMD written in exec form (JSON array), not shell form?
 
 
-# Dockerfile Practice: Exercise 2
+# Practice Set: Exercises 2 to 5
 
-## What This Exercise Covers
-
-This one is heavier than Exercise 1. It specifically tests:
-
-- Multi-stage builds
-- Build cache ordering (so you don't waste time re-running slow steps)
-- Cache invalidation pitfalls (the `apt-get update` trap)
-- Reducing final image size (cleaning up build-only tools, avoiding leftover cache files)
-
-No skipping steps this time. Every requirement below maps to one of these concepts.
+Same format as Exercise 1: a scenario, a requirements checklist, then a fully commented solution. Each one uses a different language on purpose, so the same Dockerfile instructions get practiced against different ecosystem quirks (different package managers, different base image families, and in two cases, multi-stage builds).
 
 ---
 
-## Scenario
+## Exercise 2: Dockerize a Node.js (Express) app
 
-You have a Python app that depends on a package which needs to be **compiled from source** during installation (this happens in real life, some Python packages have C extensions). To compile it, pip needs a C compiler and some build headers, which come from installing `gcc` and `python3-dev` via `apt-get`.
+**The scenario:**
 
-Once the package is installed, though, your app does NOT need `gcc` or `python3-dev` to actually *run*. Those tools were only needed during the build.
-
-File structure:
 ```
 myapp/
-├── app.py
-├── requirements.txt
+├── server.js
+├── package.json
 ```
 
-`requirements.txt`:
-```
-some-compiled-package==2.1.0
-flask==3.0.0
-```
+`package.json` lists `express` as a dependency. `server.js` listens on port 3000.
 
-## Your Task
+**Your task:** write a Dockerfile that meets ALL of these requirements:
 
-Write a Dockerfile that meets ALL of the following requirements. Read them carefully, several of them test specific concepts on purpose.
+1. Uses `node:20-alpine` as the base image
+2. Sets `/usr/src/app` as the working directory
+3. Copies `package.json` (and `package-lock.json`) in first, installs dependencies, THEN copies the rest of the app code
+4. Installs dependencies with `npm ci --omit=dev` instead of `npm install` (reproducible, production-only install)
+5. Documents that the container listens on port 3000
+6. Creates and switches to a non-root user before running the app (note: Alpine doesn't have `useradd`, it uses `addgroup` / `adduser`)
+7. Runs the app using exec form, as `node server.js`
 
-1. **Base image:** use `python:3.12-slim` for BOTH stages.
-
-2. **Multi-stage build, two stages:**
-   - Stage 1, named `builder`: has everything needed to install the Python dependencies, including the C compiler.
-   - Stage 2, the final stage: only contains what's needed to *run* the app. No compiler, no build tools, no leftover apt cache.
-
-3. **In the `builder` stage:**
-   - Install `gcc` and `python3-dev` using `apt-get`, in a way that does not leave stale package list files bloating that layer.
-   - Update and install in the SAME `RUN` instruction (avoid the cache invalidation trap where `apt-get update` gets cached separately from the install).
-   - Install the Python dependencies from `requirements.txt` using `pip install --no-cache-dir`.
-   - Order your instructions so that if you only change `app.py` later (not `requirements.txt`), Docker does NOT need to redo the `apt-get install` or `pip install` steps.
-
-4. **In the final stage:**
-   - Do NOT install `gcc` or `python3-dev` here at all, that's the whole point of splitting stages.
-   - Copy the installed Python packages over from the `builder` stage (hint: pip installs packages into a Python site-packages directory, you'll need to copy that path across with `COPY --from=builder`).
-   - Copy your application code (`app.py`) in.
-   - Create a non-root user and switch to it, with correct ownership on the copied files.
-   - Expose port 5000.
-   - Run the app in exec form.
-
-5. **General cache discipline:**
-   - Anything that changes rarely (base image, system dependency installs) should appear before anything that changes often (your actual app code).
-
-## How to Practice
-
-Write your full Dockerfile. mark line by line and scored out of 100,by following the requirement. same as before, checking each requirement plus best practices around caching and image size.
+**Solution:**
 
 ```dockerfile
-# Write your Dockerfile ...
+# Small base image: Alpine Linux + Node 20. Good default for production Node images.
+FROM node:20-alpine
 
+# All following instructions run from this directory inside the container
+WORKDIR /usr/src/app
 
+# Copy ONLY the dependency manifests first. This is the same caching trick as
+# Exercise 1: the "npm ci" layer below only re-runs when these files change,
+# not every time application source code changes.
+COPY package.json package-lock.json ./
 
+# npm ci (not npm install) does a clean, reproducible install strictly from
+# package-lock.json. --omit=dev skips devDependencies, which have no business
+# being in a production image.
+RUN npm ci --omit=dev
+
+# Now copy the rest of the application source
+COPY . .
+
+# Document the port the app listens on. Does not publish it, just documents it.
+EXPOSE 3000
+
+# Alpine images use addgroup/adduser instead of groupadd/useradd.
+# -S = system account, -G = add to this group
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+
+# Switch to the non-root user before the app runs
+USER appuser
+
+# Exec form: runs node directly as PID 1, so it receives signals like SIGTERM correctly
+CMD ["node", "server.js"]
 ```
 
-## Self-Check Before Submitting
+---
 
-- [ ] Do I have exactly two `FROM` lines, with the first one named via `AS builder`?
-- [ ] Is `gcc`/`python3-dev` installed ONLY in the builder stage, never in the final stage?
-- [ ] Did I combine `apt-get update` and `apt-get install` into one RUN, and clean up apt's lists in that same RUN?
-- [ ] Did I copy `requirements.txt` and install dependencies BEFORE copying the rest of my app code, in the builder stage?
-- [ ] Did I use `COPY --from=builder` to bring the installed packages into the final stage?
-- [ ] Did I create a non-root user in the final stage and give it ownership of the copied files?
-- [ ] Is my final CMD in exec form?
-- [ ] If I only edit `app.py` and rebuild, would Docker skip re-running the slow `apt-get`/`pip install` steps? (Think through this even though you can't literally test it here.)
+## Exercise 3: Dockerize a Go app (multi-stage build)
+
+**The scenario:**
+
+```
+myapp/
+├── main.go
+├── go.mod
+├── go.sum
+```
+
+A compiled Go HTTP server listening on port 8080. Go compiles to a single static binary, which makes it a good app to introduce **multi-stage builds**: use one image to compile the code, and a second, much smaller image to actually run it.
+
+**Your task:** write a Dockerfile that meets ALL of these requirements:
+
+1. Uses a `golang:1.22` build stage to compile the app
+2. Uses `gcr.io/distroless/static-debian12` as the final, minimal runtime stage
+3. Sets `/app` as the working directory in the build stage
+4. Copies `go.mod` and `go.sum` in first, downloads modules, THEN copies the rest of the source
+5. Builds a statically linked binary (`CGO_ENABLED=0`)
+6. Copies ONLY the compiled binary into the final stage, nothing else from the build stage
+7. Documents that the container listens on port 8080
+8. Runs as a non-root user in the final stage (the distroless `nonroot` variant already ships a built-in non-root user, no `useradd` needed)
+9. Runs the binary using exec form
+
+**Solution:**
+
+```dockerfile
+# ---------- Stage 1: build ----------
+# This stage has the full Go toolchain, but none of it ships in the final image
+FROM golang:1.22 AS builder
+
+WORKDIR /app
+
+# Copy dependency files first. "go mod download" only re-runs when go.mod or
+# go.sum actually change, not on every source code edit.
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Now copy the actual source code
+COPY . .
+
+# CGO_ENABLED=0 produces a fully static binary with no C library dependencies,
+# which is required for it to run on a minimal image like distroless that has
+# no shared libraries at all. GOOS=linux makes the target explicit regardless
+# of what OS you're building on.
+RUN CGO_ENABLED=0 GOOS=linux go build -o /app/server .
+
+# ---------- Stage 2: run ----------
+# distroless images contain almost nothing: no shell, no package manager, no
+# extra binaries. Massive reduction in attack surface compared to a full OS
+# base image. The ":nonroot" tag also ships a non-root user out of the box.
+FROM gcr.io/distroless/static-debian12:nonroot
+
+WORKDIR /app
+
+# Copy ONLY the compiled binary from the builder stage. Nothing else from
+# that build stage makes it into the final image.
+COPY --from=builder /app/server /app/server
+
+EXPOSE 8080
+
+# distroless:nonroot already runs as a non-root user by default, but being
+# explicit here documents the intent for anyone reading the file
+USER nonroot:nonroot
+
+# Exec form. Note: there's no shell in this image, so shell form
+# ("CMD /app/server") would fail outright, exec form is the only option that works.
+CMD ["/app/server"]
+```
+
+---
+
+## Exercise 4: Dockerize a Java Spring Boot app (Maven multi-stage build)
+
+**The scenario:**
+
+```
+myapp/
+├── pom.xml
+├── src/
+│   └── main/java/...
+```
+
+A Spring Boot app that builds into an executable jar and listens on port 8080. Same multi-stage idea as Exercise 3, but with a build tool (Maven) in the picture instead of a single compile command.
+
+**Your task:** write a Dockerfile that meets ALL of these requirements:
+
+1. Uses a `maven:3.9-eclipse-temurin-17` build stage to build the jar
+2. Uses `eclipse-temurin:17-jre-alpine` as the final, minimal runtime stage
+3. Sets `/build` as the working directory in the build stage
+4. Copies `pom.xml` in first and downloads dependencies offline, THEN copies the rest of the source (caching, same idea as Exercises 1 to 3, applied to Maven's local repo)
+5. Packages the app, skipping tests during the image build (`-DskipTests`)
+6. Copies ONLY the built jar into the final stage
+7. Documents that the container listens on port 8080
+8. Creates and switches to a non-root user in the final stage
+9. Runs the jar using exec form
+
+**Solution:**
+
+```dockerfile
+# ---------- Stage 1: build ----------
+FROM maven:3.9-eclipse-temurin-17 AS builder
+
+WORKDIR /build
+
+# Copy only the pom first. "dependency:go-offline" pre-downloads every
+# dependency Maven will need. This layer is cached and skipped on rebuilds
+# unless pom.xml itself changes, so editing a .java file doesn't trigger a
+# full re-download of the internet.
+COPY pom.xml .
+RUN mvn dependency:go-offline
+
+# Now copy the actual source
+COPY src ./src
+
+# Build the jar. -DskipTests keeps the image build fast; tests belong in CI,
+# not in the Docker build step.
+RUN mvn package -DskipTests
+
+# ---------- Stage 2: run ----------
+# JRE only, not the full JDK, and Alpine keeps it small. We don't need a
+# compiler or build tools to run an already-built jar.
+FROM eclipse-temurin:17-jre-alpine
+
+WORKDIR /app
+
+# Alpine syntax again: addgroup/adduser, not groupadd/useradd
+RUN addgroup -S spring && adduser -S spring -G spring
+
+# Copy ONLY the built jar out of the builder stage. The wildcard picks up
+# whatever version Maven produced without hardcoding the jar's exact name.
+COPY --from=builder /build/target/*.jar /app/app.jar
+
+EXPOSE 8080
+
+USER spring
+
+# Exec form
+CMD ["java", "-jar", "/app/app.jar"]
+```
+
+---
+
+## Exercise 5: Dockerize a Ruby (Sinatra) app
+
+**The scenario:**
+
+```
+myapp/
+├── app.rb
+├── Gemfile
+├── Gemfile.lock
+```
+
+A small Sinatra web app listening on port 4567. Single-stage, like Exercise 1 and 2, to close the set out on the same pattern the lab started with.
+
+**Your task:** write a Dockerfile that meets ALL of these requirements:
+
+1. Uses `ruby:3.3-slim` as the base image
+2. Sets `/app` as the working directory
+3. Copies `Gemfile` and `Gemfile.lock` in first, installs gems, THEN copies the rest of the app code
+4. Installs gems with `bundle install --deployment --without development test`
+5. Documents that the container listens on port 4567
+6. Creates and switches to a non-root user before running the app
+7. Runs the app using exec form, as `ruby app.rb`
+
+**Solution:**
+
+```dockerfile
+FROM ruby:3.3-slim
+
+WORKDIR /app
+
+# Same caching pattern as every exercise above: copy only the gem manifests
+# first, so "bundle install" is only re-run when a gem actually changes
+COPY Gemfile Gemfile.lock ./
+
+# --deployment enforces that Gemfile.lock is respected exactly, no silent
+# version drift. --without development test skips gems this image will
+# never need at runtime.
+RUN bundle install --deployment --without development test
+
+# Now copy the rest of the app
+COPY . .
+
+EXPOSE 4567
+
+# Debian-based image (ruby:3.3-slim), so this is useradd syntax, same family
+# as Exercise 1's Python image but different from the Alpine-based Exercises
+# 2 and 4
+RUN useradd --create-home appuser
+USER appuser
+
+CMD ["ruby", "app.rb"]
+```
+
+---
+
+## Recurring pattern across all five exercises
+
+Worth calling out explicitly to the class: every solution above follows the same four moves, just with different tooling per language.
+
+1. **Copy manifest before source.** `requirements.txt`, `package.json`, `go.mod`, `pom.xml`, `Gemfile`, always copied and installed before the rest of the app, for layer caching.
+2. **Minimal base image.** `slim`, `alpine`, or `distroless`, never the full default image, to keep the attack surface and image size down.
+3. **Non-root user, created before it's referenced.** The exact command changes (`useradd` vs `addgroup`/`adduser` vs a built-in distroless user), but the ordering rule is the same: the user must exist before anything tries to use it.
+4. **Exec form for the final `CMD`/`ENTRYPOINT`.** So the app runs as PID 1 and receives container signals correctly.
