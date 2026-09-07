@@ -7,6 +7,7 @@ on:
 jobs:
   FirstJob:     #1 job id(First job)
     runs-on: ubuntu-latest
+    needs: SecondJob
     steps:
       - name: greetings   # identifier for step 1
         run:  echo "How are you learning"
@@ -16,7 +17,7 @@ jobs:
 
   SecondJob:
      runs-on: ubuntu-latest
-     needs: FirstJob
+     
 
      steps: 
        - name: print my name
