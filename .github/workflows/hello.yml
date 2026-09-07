@@ -7,7 +7,7 @@ on:
 jobs:
   FirstJob:     #1 job id(First job)
     name: Emmanuel
-    runs-on: ubuntu-latest
+    runs-on: demo_runner
     needs: SecondJob
     steps:
       - name: greetings   # identifier for step 1
@@ -17,7 +17,7 @@ jobs:
         run:  ls -al
 
   SecondJob:
-     runs-on: ubuntu-latest
+     runs-on: demo_runner
      name: samuel
      
 
