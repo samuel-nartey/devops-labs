@@ -7,6 +7,24 @@ By Samuel Nartey, DevSecOps Engineer, AWS Community Builder, HashiCorp User Grou
 
 ---
 
+## Name changes in this version (v2)
+
+Every name that lives in your AWS account, Vault, Docker or GitHub was changed, so a fresh run never collides with leftovers from an earlier run.
+
+| Old name | New name | Where it lives |
+|---|---|---|
+| `zero-secrets-aws` (repo and folder) | `shortlived-aws` | Local folder, GitHub repo, resource tag |
+| `zero-secrets-*` (bucket prefix) | `shortlived-*` | S3 buckets, IAM policy ARNs, tests |
+| `vault-broker` | `vault-minter` | IAM user |
+| `terraform-deployer` | `tf-runner` | IAM role, Vault role, Vault policy, creds path |
+| `terraform-plan` | `tf-planner` | Vault policy |
+| `github-terraform-apply` | `gh-tf-apply` | Vault JWT role |
+| `github-terraform-plan` | `gh-tf-plan` | Vault JWT role |
+| `vault` (container) and `vault-data` (volume) | `vault-lab` and `vault-lab-data` | Docker |
+| `prove-zero-secrets.sh` | `prove-shortlived.sh` | Script |
+
+---
+
 ## Table of contents
 
 1. [What we are building](#1-what-we-are-building)
@@ -23,7 +41,7 @@ By Samuel Nartey, DevSecOps Engineer, AWS Community Builder, HashiCorp User Grou
 
 ## 1. What we are building
 
-Welcome. In this lab I will walk you through one repository, `zero-secrets-aws`, built in three levels. Every level is a complete, working system, so you can stop at any level and still have something real to show.
+Welcome. In this lab I will walk you through one repository, `shortlived-aws`, built in three levels. Every level is a complete, working system, so you can stop at any level and still have something real to show.
 
 | Level | What you build | Time | Who it is for |
 |---|---|---|---|
@@ -51,10 +69,10 @@ Vault itself still needs a way to talk to AWS. I will be straight with you about
 GitHub Actions (OIDC token, no stored secret)
         |
         v
-   Vault JWT auth  --->  policy: read aws/creds/terraform-deployer only
+   Vault JWT auth  --->  policy: read aws/creds/tf-runner only
         |
         v
-   Vault AWS secrets engine --- sts:AssumeRole --->  IAM role terraform-deployer
+   Vault AWS secrets engine --- sts:AssumeRole --->  IAM role tf-runner
         |
         v
    15-minute AWS credentials (ASIA... keys + session token)
@@ -63,7 +81,7 @@ GitHub Actions (OIDC token, no stored secret)
    terraform plan / apply  --->  AWS resources
 ```
 
-Think of a hotel. **Vault** is the front desk. The **broker user** is the clerk who can only make guest keycards. The **deployer role** is the room Terraform needs to enter. The **temporary credentials** are the guest keycards, and they stop working on their own after a set time.
+Think of a hotel. **Vault** is the front desk. The **broker user** (`vault-minter`) is the clerk who can only make guest keycards. The **deployer role** (`tf-runner`) is the room Terraform needs to enter. The **temporary credentials** are the guest keycards, and they stop working on their own after a set time.
 
 ### Key terms (say them out loud)
 
@@ -94,10 +112,12 @@ You need:
 
 > **Tip:** Keep the AWS console open in a browser tab. At several steps I give you a **Console check** so you can see with your own eyes what the commands did.
 
+> **Tip:** If you ran an earlier version of this lab, the new names mean nothing will clash. Still, clean up the old resources (old `vault-broker` user, `terraform-deployer` role, `zero-secrets-*` buckets) so your sandbox stays tidy.
+
 ### Repo layout
 
 ```
-zero-secrets-aws/
+shortlived-aws/
   README.md
   .gitignore
   docs/                      architecture diagram, threat model, demo script
@@ -108,7 +128,7 @@ zero-secrets-aws/
     vault-env.sh             points your terminal at Vault
     vault-dev-setup.sh       rebuilds the Vault side after a restart
     vault-aws-env.sh         exports short-lived creds as env vars (Level B)
-    prove-zero-secrets.sh    evidence script (Level C)
+    prove-shortlived.sh      evidence script (Level C)
   .github/workflows/terraform.yml
   .pre-commit-config.yaml
 ```
@@ -116,7 +136,7 @@ zero-secrets-aws/
 Create it:
 
 ```bash
-mkdir zero-secrets-aws && cd zero-secrets-aws
+mkdir shortlived-aws && cd shortlived-aws
 git init
 mkdir -p bootstrap vault-config app scripts docs .github/workflows
 ```
@@ -217,8 +237,8 @@ terraform {
 variable "region" { default = "us-east-1" }
 provider "aws" { region = var.region }
 
-resource "aws_iam_user" "vault_broker" {
-  name = "vault-broker"
+resource "aws_iam_user" "vault_minter" {
+  name = "vault-minter"
 }
 
 data "aws_iam_policy_document" "trust" {
@@ -226,22 +246,22 @@ data "aws_iam_policy_document" "trust" {
     actions = ["sts:AssumeRole"]
     principals {
       type        = "AWS"
-      identifiers = [aws_iam_user.vault_broker.arn]
+      identifiers = [aws_iam_user.vault_minter.arn]
     }
   }
 }
 
 resource "aws_iam_role" "deployer" {
-  name                 = "terraform-deployer"
+  name                 = "tf-runner"
   assume_role_policy   = data.aws_iam_policy_document.trust.json
   max_session_duration = 3600
 }
 
-# Demo permissions: S3 buckets named zero-secrets-* only
+# Demo permissions: S3 buckets named shortlived-* only
 data "aws_iam_policy_document" "deployer" {
   statement {
     actions   = ["s3:*"]
-    resources = ["arn:aws:s3:::zero-secrets-*", "arn:aws:s3:::zero-secrets-*/*"]
+    resources = ["arn:aws:s3:::shortlived-*", "arn:aws:s3:::shortlived-*/*"]
   }
 }
 resource "aws_iam_role_policy" "deployer" {
@@ -257,14 +277,14 @@ data "aws_iam_policy_document" "broker" {
   }
 }
 resource "aws_iam_user_policy" "broker" {
-  user   = aws_iam_user.vault_broker.name
+  user   = aws_iam_user.vault_minter.name
   policy = data.aws_iam_policy_document.broker.json
 }
 
 output "deployer_role_arn" { value = aws_iam_role.deployer.arn }
 ```
 
-Apply it. I run every command from the **repo root** (`zero-secrets-aws/`) and use `-chdir` to reach subfolders. That way the commands work no matter which folder you were in.
+Apply it. I run every command from the **repo root** (`shortlived-aws/`) and use `-chdir` to reach subfolders. That way the commands work no matter which folder you were in.
 
 ```bash
 terraform -chdir=bootstrap init
@@ -272,11 +292,11 @@ terraform -chdir=bootstrap apply
 terraform -chdir=bootstrap output -raw deployer_role_arn
 ```
 
-The last command should print a full ARN like `arn:aws:iam::123456789012:role/terraform-deployer`.
+The last command should print a full ARN like `arn:aws:iam::123456789012:role/tf-runner`.
 
 > **Teaching point:** The broker can do exactly one thing: assume one role. A stolen broker key is **not** an admin key.
 
-> **Console check:** In the AWS console, open **IAM, Users, vault-broker** and look at the **Permissions** tab. You will see one inline policy that allows only `sts:AssumeRole`. Then open **IAM, Roles, terraform-deployer, Trust relationships** and you will see the broker user named as the only trusted principal.
+> **Console check:** In the AWS console, open **IAM, Users, vault-minter** and look at the **Permissions** tab. You will see one inline policy that allows only `sts:AssumeRole`. Then open **IAM, Roles, tf-runner, Trust relationships** and you will see the broker user named as the only trusted principal.
 
 #### Create the broker key
 
@@ -284,7 +304,7 @@ Create the key with the CLI so it never lands in Terraform state. Note three det
 
 ```bash
 umask 077
-aws iam create-access-key --user-name vault-broker --output json > bootstrap/broker.json
+aws iam create-access-key --user-name vault-minter --output json > bootstrap/broker.json
 ```
 
 Check that the file really is JSON and holds a key:
@@ -300,11 +320,11 @@ The first line should be `{`, and the second should be a key ID starting with `A
 
 > **Warning:** The secret access key exists **only** in that file. AWS will never show it to you again. If you delete the file before Vault has it, you must delete the key and create a new one.
 
-> **Note:** An IAM user can have at most two access keys. If you see `LimitExceeded`, list the keys with `aws iam list-access-keys --user-name vault-broker --output table`, delete the one you do not need with `aws iam delete-access-key --user-name vault-broker --access-key-id <KEY_ID>`, then try again.
+> **Note:** An IAM user can have at most two access keys. If you see `LimitExceeded`, list the keys with `aws iam list-access-keys --user-name vault-minter --output table`, delete the one you do not need with `aws iam delete-access-key --user-name vault-minter --access-key-id <KEY_ID>`, then try again.
 
 > **Tip:** I used to shred this file straight away. In dev mode that backfires: Vault forgets everything when it restarts, and then you need the secret again. For this lab, **keep `bootstrap/broker.json` until the cleanup step**, then shred it. Level B rotates the key and makes the file worthless anyway.
 
-> **Console check:** **IAM, Users, vault-broker, Security credentials** shows one access key, with status Active and the creation time matching what you just did.
+> **Console check:** **IAM, Users, vault-minter, Security credentials** shows one access key, with status Active and the creation time matching what you just did.
 
 ### Step A2. Start Vault in dev mode
 
@@ -365,7 +385,7 @@ vault secrets enable -path=aws aws
 vault write aws/config/root \
   access_key="$BROKER_KEY" secret_key="$BROKER_SECRET" region=us-east-1
 
-vault write aws/roles/terraform-deployer \
+vault write aws/roles/tf-runner \
   credential_type=assumed_role \
   role_arns="$(terraform -chdir=bootstrap output -raw deployer_role_arn)" \
   default_sts_ttl=15m max_sts_ttl=1h
@@ -375,10 +395,10 @@ Verify what Vault actually saved:
 
 ```bash
 vault read aws/config/root
-vault read aws/roles/terraform-deployer
+vault read aws/roles/tf-runner
 ```
 
-`access_key` should show your broker key ID, and `role_arns` must show `[arn:aws:iam::...:role/terraform-deployer]`.
+`access_key` should show your broker key ID, and `role_arns` must show `[arn:aws:iam::...:role/tf-runner]`.
 
 > **Warning:** If `role_arns` shows `[]`, the role is broken even though Vault printed "Success!". Vault accepts an empty value without complaint. This happens when the `$(...)` part fails silently, for example because of a wrong folder. Fix the command, run it again, and read the role back. Writing to the same path simply overwrites it.
 
@@ -386,7 +406,7 @@ vault read aws/roles/terraform-deployer
 
 - `vault secrets enable -path=aws aws` installs a secrets engine of type `aws` at the path `aws/`. Think of installing a vending machine of type "AWS" and putting it at the spot labelled `aws/`.
 - `vault write aws/config/root ...` hands Vault the broker's login. Here "root" means the engine's base credentials, **not** the AWS root account and **not** Vault's root token. The trailing `\` just means "the command continues on the next line".
-- `vault write aws/roles/terraform-deployer ...` creates a recipe. When someone asks for credentials from this role, Vault assumes the IAM role in `role_arns` and hands back the temporary result.
+- `vault write aws/roles/tf-runner ...` creates a recipe. When someone asks for credentials from this role, Vault assumes the IAM role in `role_arns` and hands back the temporary result.
 - `credential_type=assumed_role` borrows the permissions of an existing role through STS. The alternatives are `iam_user` (creates a real IAM user per lease) and `federation_token`.
 - `default_sts_ttl=15m` is the lifetime if the requester does not ask for one. `max_sts_ttl=1h` is the longest anyone can request.
 - `$(terraform -chdir=bootstrap output -raw deployer_role_arn)` runs the command inside the brackets and pastes its output in place. `-raw` removes the quotes so you get the plain ARN.
@@ -417,12 +437,12 @@ vault read aws/roles/terraform-deployer
 > vault write aws/config/root \
 >   access_key="$BROKER_KEY" secret_key="$BROKER_SECRET" region=us-east-1
 >
-> vault write aws/roles/terraform-deployer \
+> vault write aws/roles/tf-runner \
 >   credential_type=assumed_role \
 >   role_arns="$ROLE_ARN" \
 >   default_sts_ttl=15m max_sts_ttl=1h
 >
-> vault read aws/creds/terraform-deployer > /dev/null \
+> vault read aws/creds/tf-runner > /dev/null \
 >   && echo "OK: Vault can issue credentials"
 > ```
 >
@@ -431,7 +451,7 @@ vault read aws/roles/terraform-deployer
 ### Step A4. Watch a credential be born
 
 ```bash
-vault read aws/creds/terraform-deployer
+vault read aws/creds/tf-runner
 ```
 
 Point at four things on screen:
@@ -448,9 +468,9 @@ AWS_ACCESS_KEY_ID=<access_key> AWS_SECRET_ACCESS_KEY=<secret_key> \
 AWS_SESSION_TOKEN=<security_token> aws sts get-caller-identity
 ```
 
-The ARN contains `assumed-role/terraform-deployer/...`. It is a role session, **not** a user.
+The ARN contains `assumed-role/tf-runner/...`. It is a role session, **not** a user.
 
-> **Note:** If `vault read aws/creds/terraform-deployer` fails with `AccessDenied`, the problem is on the AWS side. Check that the role's trust policy names the `vault-broker` user, and that the broker's policy allows `sts:AssumeRole` on that role's ARN. IAM changes can take a few seconds to spread, so wait 10 seconds and retry.
+> **Note:** If `vault read aws/creds/tf-runner` fails with `AccessDenied`, the problem is on the AWS side. Check that the role's trust policy names the `vault-minter` user, and that the broker's policy allows `sts:AssumeRole` on that role's ARN. IAM changes can take a few seconds to spread, so wait 10 seconds and retry.
 
 > **Tip:** Always run this command **before** you move on to Terraform. If Vault can issue credentials, the whole chain (Vault, then broker, then role) works. If Terraform fails later, you already know the problem is not here.
 
@@ -476,7 +496,7 @@ provider "vault" {}   # reads VAULT_ADDR and VAULT_TOKEN from the environment
 
 data "vault_aws_access_credentials" "creds" {
   backend = "aws"
-  role    = "terraform-deployer"
+  role    = "tf-runner"
   type    = "sts"
 }
 
@@ -490,8 +510,8 @@ provider "aws" {
 resource "random_id" "suffix" { byte_length = 4 }
 
 resource "aws_s3_bucket" "demo" {
-  bucket = "zero-secrets-${random_id.suffix.hex}"
-  tags   = { project = "zero-secrets-aws", managed_by = "terraform" }
+  bucket = "shortlived-${random_id.suffix.hex}"
+  tags   = { project = "shortlived-aws", managed_by = "terraform" }
 }
 ```
 
@@ -522,7 +542,7 @@ terraform -chdir=app apply
 >
 > More fixes are in [Troubleshooting](#5-troubleshooting-for-level-a).
 
-> **Console check:** Open the **S3 console** and find the bucket named `zero-secrets-` followed by 8 hex characters, with the two tags we set.
+> **Console check:** Open the **S3 console** and find the bucket named `shortlived-` followed by 8 hex characters, with the two tags we set.
 
 ### Step A6. The honest moment (do this live)
 
@@ -535,7 +555,7 @@ You will find the temporary keys sitting in state. They expire in 15 minutes, so
 ### Step A7. Revoke and clean up
 
 ```bash
-vault lease revoke -prefix aws/creds/terraform-deployer
+vault lease revoke -prefix aws/creds/tf-runner
 terraform -chdir=app destroy
 ```
 
@@ -575,10 +595,10 @@ Cause: the file contains an ASCII **table**, not JSON, because your AWS CLI defa
 Fix: rotate the key with explicit JSON output.
 
 ```bash
-aws iam list-access-keys --user-name vault-broker --output table
-aws iam delete-access-key --user-name vault-broker --access-key-id <OLD_KEY_ID>
+aws iam list-access-keys --user-name vault-minter --output table
+aws iam delete-access-key --user-name vault-minter --access-key-id <OLD_KEY_ID>
 umask 077
-aws iam create-access-key --user-name vault-broker --output json > bootstrap/broker.json
+aws iam create-access-key --user-name vault-minter --output json > bootstrap/broker.json
 aws configure set output json
 ```
 
@@ -603,12 +623,12 @@ Cause: you ran a command written for the repo root while standing inside `bootst
 Fix: run from the repo root with `-chdir`:
 
 ```bash
-cd ~/projects/zero-secrets-aws
-vault write aws/roles/terraform-deployer \
+cd ~/projects/shortlived-aws
+vault write aws/roles/tf-runner \
   credential_type=assumed_role \
   role_arns="$(terraform -chdir=bootstrap output -raw deployer_role_arn)" \
   default_sts_ttl=15m max_sts_ttl=1h
-vault read aws/roles/terraform-deployer     # role_arns must NOT be []
+vault read aws/roles/tf-runner     # role_arns must NOT be []
 ```
 
 ### `terraform init` crashes with `Bus error (core dumped)`
@@ -672,11 +692,11 @@ sudo systemctl stop vault
 
 Then start the dev server again.
 
-### `vault read aws/creds/terraform-deployer` returns `AccessDenied`
+### `vault read aws/creds/tf-runner` returns `AccessDenied`
 
 Check in this order:
 
-1. The role's **trust policy** names the `vault-broker` user (Console: IAM, Roles, terraform-deployer, Trust relationships).
+1. The role's **trust policy** names the `vault-minter` user (Console: IAM, Roles, tf-runner, Trust relationships).
 2. The broker's policy allows `sts:AssumeRole` on that exact role ARN.
 3. `vault read aws/config/root` shows the right `access_key`. A blank value means the variables were empty when you wrote it. Export them again and redo the `vault write aws/config/root` command.
 4. Wait 10 seconds and retry. IAM changes need a moment to spread.
@@ -726,9 +746,9 @@ ui           = true
 Start it:
 
 ```bash
-docker run -d --name vault --cap-add=IPC_LOCK -p 8200:8200 \
+docker run -d --name vault-lab --cap-add=IPC_LOCK -p 8200:8200 \
   -v "$PWD/vault-config/vault.hcl:/vault/config/vault.hcl" \
-  -v vault-data:/vault/data \
+  -v vault-lab-data:/vault/data \
   hashicorp/vault:latest server
 
 export VAULT_ADDR=http://127.0.0.1:8200
@@ -743,7 +763,7 @@ In one sentence: Vault encrypts everything, and the unseal keys are needed to de
 
 > **Warning:** `unset VAULT_TOKEN` matters. Your Level A shell still has `VAULT_TOKEN=root`, which is wrong for this new server and will confuse `vault login`.
 
-> **Tip:** On WSL, make sure Docker Desktop has **WSL integration** switched on for your Ubuntu distro, otherwise `docker` is not found. If it exits immediately, run `docker logs vault` and read the first error.
+> **Tip:** On WSL, make sure Docker Desktop has **WSL integration** switched on for your Ubuntu distro, otherwise `docker` is not found. If it exits immediately, run `docker logs vault-lab` and read the first error.
 
 ### Step B2. Configure Vault with Terraform (config as code)
 
@@ -774,7 +794,7 @@ resource "vault_aws_secret_backend" "aws" {
 
 resource "vault_aws_secret_backend_role" "deployer" {
   backend         = vault_aws_secret_backend.aws.path
-  name            = "terraform-deployer"
+  name            = "tf-runner"
   credential_type = "assumed_role"
   role_arns       = [var.deployer_role_arn]
   default_sts_ttl = 900
@@ -782,10 +802,10 @@ resource "vault_aws_secret_backend_role" "deployer" {
 }
 
 resource "vault_policy" "terraform" {
-  name   = "terraform-deployer"
+  name   = "tf-runner"
   policy = <<-EOT
-    path "aws/creds/terraform-deployer" { capabilities = ["read"] }
-    path "auth/token/create"            { capabilities = ["update"] }
+    path "aws/creds/tf-runner" { capabilities = ["read"] }
+    path "auth/token/create"   { capabilities = ["update"] }
   EOT
 }
 ```
@@ -809,14 +829,14 @@ terraform -chdir=vault-config apply
 ### Step B3. Create a least-privilege token for Terraform
 
 ```bash
-vault token create -policy=terraform-deployer -ttl=30m -format=json | jq -r .auth.client_token
+vault token create -policy=tf-runner -ttl=30m -format=json | jq -r .auth.client_token
 ```
 
 Export that value as `VAULT_TOKEN` and **stop using root**. Now test the boundary:
 
 ```bash
-vault policy read terraform-deployer     # must fail with: permission denied
-vault read aws/creds/terraform-deployer  # must succeed
+vault policy read tf-runner     # must fail with: permission denied
+vault read aws/creds/tf-runner  # must succeed
 ```
 
 Showing a denial is a powerful demo. It proves the token can do one thing and nothing else.
@@ -828,7 +848,7 @@ Instead of passing keys through the provider block, let Terraform read the stand
 ```bash
 #!/usr/bin/env bash
 # Usage: source scripts/vault-aws-env.sh
-creds=$(vault read -format=json aws/creds/terraform-deployer) \
+creds=$(vault read -format=json aws/creds/tf-runner) \
   || { echo "Could not read credentials from Vault"; return 1; }
 export AWS_ACCESS_KEY_ID=$(jq -r .data.access_key <<<"$creds")
 export AWS_SECRET_ACCESS_KEY=$(jq -r .data.secret_key <<<"$creds")
@@ -856,8 +876,8 @@ provider "aws" { region = var.region }
 resource "random_id" "suffix" { byte_length = 4 }
 
 resource "aws_s3_bucket" "demo" {
-  bucket = "zero-secrets-${random_id.suffix.hex}"
-  tags   = { project = "zero-secrets-aws", managed_by = "terraform" }
+  bucket = "shortlived-${random_id.suffix.hex}"
+  tags   = { project = "shortlived-aws", managed_by = "terraform" }
 }
 ```
 
@@ -888,7 +908,7 @@ data "aws_iam_policy_document" "broker" {
   }
   statement {
     actions   = ["iam:CreateAccessKey", "iam:DeleteAccessKey", "iam:ListAccessKeys"]
-    resources = [aws_iam_user.vault_broker.arn]
+    resources = [aws_iam_user.vault_minter.arn]
   }
 }
 ```
@@ -913,7 +933,7 @@ Vault replaces the broker's access key with a new one that only Vault knows. Eve
 > }
 > ```
 
-> **Console check:** **IAM, Users, vault-broker, Security credentials** now shows a **new** access key with a new creation time, and the old one is gone.
+> **Console check:** **IAM, Users, vault-minter, Security credentials** now shows a **new** access key with a new creation time, and the old one is gone.
 
 ### Level B checkpoint
 
@@ -942,12 +962,12 @@ resource "vault_jwt_auth_backend" "github" {
 # Apply role: only the main branch of YOUR repo
 resource "vault_jwt_auth_backend_role" "apply" {
   backend         = vault_jwt_auth_backend.github.path
-  role_name       = "github-terraform-apply"
+  role_name       = "gh-tf-apply"
   role_type       = "jwt"
   user_claim      = "repository"
   bound_audiences = ["https://github.com/samuel-nartey"]
   bound_claims = {
-    repository = "samuel-nartey/zero-secrets-aws"
+    repository = "samuel-nartey/shortlived-aws"
     ref        = "refs/heads/main"
   }
   token_policies = [vault_policy.terraform.name]
@@ -963,21 +983,21 @@ For pull requests, create a **second** role and policy that maps to a read-only 
 ```hcl
 resource "vault_jwt_auth_backend_role" "plan" {
   backend         = vault_jwt_auth_backend.github.path
-  role_name       = "github-terraform-plan"
+  role_name       = "gh-tf-plan"
   role_type       = "jwt"
   user_claim      = "repository"
   bound_audiences = ["https://github.com/samuel-nartey"]
   bound_claims = {
-    repository = "samuel-nartey/zero-secrets-aws"
+    repository = "samuel-nartey/shortlived-aws"
     event_name = "pull_request"
   }
-  token_policies = ["terraform-plan"]   # a policy you write, pointing at a read-only AWS role
+  token_policies = ["tf-planner"]   # a policy you write, pointing at a read-only AWS role
   token_ttl      = 600
   token_max_ttl  = 900
 }
 ```
 
-> **Note:** The `terraform-plan` policy and a read-only AWS role are your exercise. Build them the same way as the deployer pair. **Never let a pull request from a fork reach the apply role.**
+> **Note:** The `tf-planner` policy and a read-only AWS role are your exercise. Build them the same way as the deployer pair. **Never let a pull request from a fork reach the apply role.**
 
 Now the workflow, `.github/workflows/terraform.yml`:
 
@@ -1005,12 +1025,12 @@ jobs:
         with:
           url: ${{ vars.VAULT_ADDR }}
           method: jwt
-          role: ${{ github.event_name == 'pull_request' && 'github-terraform-plan' || 'github-terraform-apply' }}
+          role: ${{ github.event_name == 'pull_request' && 'gh-tf-plan' || 'gh-tf-apply' }}
           jwtGithubAudience: https://github.com/samuel-nartey
           exportToken: true
       - name: Short-lived AWS credentials
         run: |
-          creds=$(vault read -format=json aws/creds/terraform-deployer)
+          creds=$(vault read -format=json aws/creds/tf-runner)
           echo "::add-mask::$(jq -r .data.secret_key <<<"$creds")"
           echo "::add-mask::$(jq -r .data.security_token <<<"$creds")"
           {
@@ -1036,7 +1056,7 @@ jobs:
 terraform {
   backend "s3" {
     bucket       = "your-org-tfstate-prod"
-    key          = "zero-secrets-aws/terraform.tfstate"
+    key          = "shortlived-aws/terraform.tfstate"
     region       = "us-east-1"
     encrypt      = true
     kms_key_id   = "alias/tfstate"
@@ -1054,7 +1074,7 @@ Ephemeral resources are **never written to state or plan files**. If you prefer 
 ```hcl
 ephemeral "vault_aws_access_credentials" "creds" {
   backend = "aws"
-  role    = "terraform-deployer"
+  role    = "tf-runner"
   type    = "sts"
 }
 ```
@@ -1084,7 +1104,7 @@ repos:
 
 > **Tip:** Update the `rev` values to the current releases, then run `pre-commit install` so the checks run on every commit.
 
-Add a native test in `app/tests/bucket.tftest.hcl` using `command = plan`, with assertions that the bucket name has the `zero-secrets-` prefix and that the tags include `managed_by`. Pin provider versions, commit `.terraform.lock.hcl`, and set branch protection so `main` requires a passing plan.
+Add a native test in `app/tests/bucket.tftest.hcl` using `command = plan`, with assertions that the bucket name has the `shortlived-` prefix and that the tags include `managed_by`. Pin provider versions, commit `.terraform.lock.hcl`, and set branch protection so `main` requires a passing plan.
 
 Optional policy as code: Sentinel (HCP Terraform) or OPA/conftest on the plan JSON, to block any IAM policy containing `"Action": "*"`.
 
@@ -1125,7 +1145,7 @@ listener "tcp" {
 
 ### Step C7. Evidence script
 
-`scripts/prove-zero-secrets.sh` should run these checks and print **PASS** or **FAIL** for each:
+`scripts/prove-shortlived.sh` should run these checks and print **PASS** or **FAIL** for each:
 
 1. `gitleaks detect` finds no secrets in the repo or its history
 2. `grep -E 'AKIA|ASIA' app/terraform.tfstate` returns nothing (for remote state, use `terraform state pull | grep ...`)
@@ -1168,8 +1188,8 @@ Order matters. Do these in sequence and **keep Vault running until the first com
 terraform -chdir=app destroy
 
 # 2. Delete any remaining broker access keys (IAM users with keys cannot be destroyed)
-aws iam list-access-keys --user-name vault-broker --output table
-aws iam delete-access-key --user-name vault-broker --access-key-id <KEY_ID>
+aws iam list-access-keys --user-name vault-minter --output table
+aws iam delete-access-key --user-name vault-minter --access-key-id <KEY_ID>
 
 # 3. Destroy the bootstrap resources
 terraform -chdir=bootstrap destroy
@@ -1180,12 +1200,12 @@ shred -u bootstrap/broker.json
 # 5. Stop Vault
 #    Level A: press Ctrl+C in Terminal 1
 #    Level B:
-docker rm -f vault && docker volume rm vault-data
+docker rm -f vault-lab && docker volume rm vault-lab-data
 ```
 
 > **Warning:** If you rotated the key in Level B, the key now in IAM was created by Vault, not by you. Step 2 deletes it, and that is exactly what you want.
 
-> **Console check:** Confirm in the AWS console that **no** `vault-broker` user, `terraform-deployer` role, or `zero-secrets-*` bucket remains. IAM (Users and Roles) and S3 each take about 10 seconds to check.
+> **Console check:** Confirm in the AWS console that **no** `vault-minter` user, `tf-runner` role, or `shortlived-*` bucket remains. IAM (Users and Roles) and S3 each take about 10 seconds to check.
 
 ---
 
